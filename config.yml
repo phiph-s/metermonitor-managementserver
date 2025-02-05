@@ -1,1 +1,8 @@
-run_setup_server: true
+dbfile: "watermeters.db"
+secret_key: "debug"
+mqtt:
+  broker: "192.168.178.24"
+  port: 1883
+  topic: "MeterMonitor/#"
+  username: "esp"
+  password: "esp"
