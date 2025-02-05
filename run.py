@@ -36,10 +36,14 @@ with open('config.yml') as file:
                 )
             ''')
     cursor.execute('''
-                CREATE TABLE IF NOT EXISTS thresholds (
+                CREATE TABLE IF NOT EXISTS settings (
                     name TEXT PRIMARY KEY,
                     threshold_low INTEGER,
                     threshold_high INTEGER,
+                    segments INTEGER,
+                    shrink_last_3 BOOLEAN,
+                    extended_last_digit BOOLEAN,
+                    invert BOOLEAN,
                     FOREIGN KEY(name) REFERENCES watermeters(name)
                 )
             ''')

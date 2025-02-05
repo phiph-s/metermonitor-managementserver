@@ -1,12 +1,18 @@
 from io import BytesIO
 
+import cv2
+import numpy as np
 from PIL import Image
-from fastapi import FastAPI, HTTPException, Query, Header, Depends
+from fastapi import FastAPI, HTTPException, Body, Header, Depends
+from fastapi.openapi.models import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import base64
 import sqlite3
+
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+
 from lib.meter_processing.meter_processing import MeterPredictor
 
 # http server class
@@ -62,10 +68,14 @@ def prepare_setup_app(config, lifespan):
         WiFi_RSSI: int
         picture: PictureData
 
-    class ThresholdRequest(BaseModel):
+    class SettingsRequest(BaseModel):
         name: str
         threshold_low: int
         threshold_high: int
+        segments: int
+        shrink_last_3: bool
+        extended_last_digit: bool
+        invert: bool
 
     class EvalRequest(BaseModel):
         eval: str
@@ -78,16 +88,26 @@ def prepare_setup_app(config, lifespan):
         existing_meters = {row[0] for row in cursor.fetchall()}
         return list(existing_meters)
 
-    @app.get("/api/evaluate", dependencies=[Depends(authenticate)])
-    def evaluate(base64_image: str = Query(...)):
-        try:
-            image_data = base64.b64decode(base64_image)
-            # get pil image from base64
+    @app.post("/api/evaluate/single", dependencies=[Depends(authenticate)])
+    def evaluate(
+            base64str: str = Body(...),  # Changed from Query to Body for POST requests
+            threshold_low: float = Body(0, ge=0, le=255),
+            threshold_high: float = Body(155, ge=0, le=255),
+            invert: bool = Body(False)
+    ):
+            # Decode the base64 image
+            image_data = base64.b64decode(base64str)
+
+            # Get PIL image from base64
             image = Image.open(BytesIO(image_data))
-            result = meter_preditor.predict_single_image(image)
-            return result
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 image")
+            # to numpy array
+            image = np.array(image)
+
+            # Apply threshold with the passed values
+            base64r, digits = meter_preditor.apply_threshold(image, threshold_low, threshold_high, invert = invert)
+
+            # Return the result
+            return {"base64": base64r}
 
     @app.get("/api/watermeters", dependencies=[Depends(authenticate)])
     def get_watermeters():
@@ -142,29 +162,39 @@ def prepare_setup_app(config, lifespan):
         db_connection.commit()
         return {"message": "Watermeter configured", "name": config.name}
 
-    @app.get("/api/thresholds/{name}", dependencies=[Depends(authenticate)])
-    def get_thresholds(name: str):
+    @app.get("/api/settings/{name}", dependencies=[Depends(authenticate)])
+    def get_settings(name: str):
         cursor = db_connection().cursor()
-        cursor.execute("SELECT threshold_low, threshold_high FROM thresholds WHERE name = ?", (name,))
+        cursor.execute("SELECT threshold_low, threshold_high, segments, shrink_last_3, extended_last_digit, invert FROM settings WHERE name = ?", (name,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Thresholds not found")
-        return {"threshold_low": row[0], "threshold_high": row[1]}
+        return {
+            "threshold_low": row[0],
+            "threshold_high": row[1],
+            "segments": row[2],
+            "shrink_last_3": row[3],
+            "extended_last_digit": row[4],
+            "invert": row[5]
+        }
 
-    @app.post("/api/thresholds", dependencies=[Depends(authenticate)])
-    def set_thresholds(thresholds: ThresholdRequest):
+    @app.post("/api/settings", dependencies=[Depends(authenticate)])
+    def set_settings(settings: SettingsRequest):
         db = db_connection()
         cursor = db.cursor()
+        print(settings.shrink_last_3)
         cursor.execute(
             """
-            INSERT INTO thresholds (name, threshold_low, threshold_high) 
-            VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET 
-            threshold_low=excluded.threshold_low, threshold_high=excluded.threshold_high
+            INSERT INTO settings (name, threshold_low, threshold_high, segments, shrink_last_3, extended_last_digit, invert) 
+            VALUES (?, ?, ?, ?, ? , ?, ?) ON CONFLICT(name) DO UPDATE SET 
+            threshold_low=excluded.threshold_low, threshold_high=excluded.threshold_high,
+            segments=excluded.segments, shrink_last_3=excluded.shrink_last_3, extended_last_digit=excluded.extended_last_digit, invert=excluded.invert
             """,
-            (thresholds.name, thresholds.threshold_low, thresholds.threshold_high)
+            (settings.name, settings.threshold_low, settings.threshold_high,
+             settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.invert)
         )
         db.commit()
-        return {"message": "Thresholds set", "name": thresholds.name}
+        return {"message": "Thresholds set", "name": settings.name}
 
     # GET endpoint for retrieving evaluations
     @app.get("/api/watermeters/{name}/evals", dependencies=[Depends(authenticate)])
