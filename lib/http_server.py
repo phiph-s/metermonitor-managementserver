@@ -13,7 +13,7 @@ import sqlite3
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
-from lib.functions import reevaluate_latest_picture
+from lib.functions import reevaluate_latest_picture, add_history_entry
 from lib.meter_processing.meter_processing import MeterPredictor
 
 
@@ -82,6 +82,10 @@ def prepare_setup_app(config, lifespan):
     class EvalRequest(BaseModel):
         eval: str
 
+    class SetupData(BaseModel):
+        value: int
+        timestamp: str
+
     @app.get("/api/discovery", dependencies=[Depends(authenticate)])
     def get_discovery():
         cursor = db_connection().cursor()
@@ -116,12 +120,31 @@ def prepare_setup_app(config, lifespan):
         return {"watermeters": [row for row in cursor.fetchall()]}
 
     @app.post("/api/setup/{name}/finish", dependencies=[Depends(authenticate)])
-    def post_setup_finished(name: str):
+    def post_setup_finished(name: str, data: SetupData):
         db = db_connection()
         cursor = db.cursor()
         cursor.execute("UPDATE watermeters SET setup = 1 WHERE name = ?", (name,))
         db.commit()
+        add_history_entry(config['dbfile'], name, data.value, timestamp=data.timestamp, manual=True)
         return {"message": "Setup completed"}
+
+    @app.post("/api/setup/{name}/reset", dependencies=[Depends(authenticate)])
+    def post_setup_reset(name: str):
+        db = db_connection()
+        cursor = db.cursor()
+        cursor.execute("UPDATE watermeters SET setup = 0 WHERE name = ?", (name,))
+
+        # clear history
+        cursor.execute("DELETE FROM history WHERE name = ?", (name,))
+
+        db.commit()
+        return {"message": "Setup completed"}
+
+    @app.get("/api/watermeters/{name}/history", dependencies=[Depends(authenticate)])
+    def get_watermeter(name: str):
+        cursor = db_connection().cursor()
+        cursor.execute("SELECT value, timestamp, manual FROM history WHERE name = ?", (name,))
+        return {"history": [row for row in cursor.fetchall()]}
 
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])
     def get_watermeter(name: str):

@@ -56,6 +56,15 @@ with open('config.yml') as file:
                     FOREIGN KEY(name) REFERENCES watermeters(name)
                 )
             ''')
+    cursor.execute('''
+                CREATE TABLE IF NOT EXISTS history (
+                    name TEXT,
+                    value INTEGER,
+                    timestamp TEXT,
+                    manual BOOLEAN,
+                    FOREIGN KEY(name) REFERENCES watermeters(name)
+                )
+            ''')
     db_connection.commit()
 
     # MQTT Config

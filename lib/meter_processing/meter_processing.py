@@ -177,39 +177,40 @@ class MeterPredictor:
         # Apply the thresholding to get black areas
         digit = cv2.inRange(digit, threshold_low, threshold_high)
 
-        inverted = cv2.bitwise_not(digit)
+        #inverted = cv2.bitwise_not(digit)
 
         # Find connected components (8-connectivity by default)
-        num_labels, labels = cv2.connectedComponents(inverted)
+        #num_labels, labels = cv2.connectedComponents(inverted)
 
         # Create a BGR color image with white background
-        color_image = np.full((*digit.shape, 3), (255, 255, 255), dtype=np.uint8)
+        #color_image = np.full((*digit.shape, 3), (255, 255, 255), dtype=np.uint8)
 
         # Get the dimensions of the image
         height, width = digit.shape
 
-        # Calculate the middle 60% region (with 20% padding on all sides)
-        start_x = int(0.4 * width)
-        end_x = int(0.6 * width)
-        start_y = int(0.4 * height)
-        end_y = int(0.6 * height)
+        # # Calculate the middle 60% region (with 20% padding on all sides)
+        # start_x = int(0.4 * width)
+        # end_x = int(0.6 * width)
+        # start_y = int(0.4 * height)
+        # end_y = int(0.6 * height)
+        #
+        # # Assign color based on component's presence in the middle region
+        # for label in range(1, num_labels):
+        #     # Slice the labels to the middle region and check for any occurrence of the current label
+        #     component_region = labels[start_y:end_y, start_x:end_x]
+        #     in_middle = np.any(component_region == label)
+        #
+        #     if in_middle:
+        #         color = (0, 0, 0)
+        #     else:
+        #         color = (255, 255, 255)
+        #
+        #     color_image[labels == label] = color
+        #
+        # #back to greyscale
+        #color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
 
-        # Assign color based on component's presence in the middle region
-        for label in range(1, num_labels):
-            # Slice the labels to the middle region and check for any occurrence of the current label
-            component_region = labels[start_y:end_y, start_x:end_x]
-            in_middle = np.any(component_region == label)
-
-            if in_middle:
-                color = (0, 0, 0)
-            else:
-                color = (255, 255, 255)
-
-            color_image[labels == label] = color
-
-        #back to greyscale
-        color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
-        img_resized = cv2.resize(color_image, (20, 32))
+        img_resized = cv2.resize(digit, (20, 32))
         img_norm = img_resized.astype('float32') / 255.0
 
         # Add a channel dimension (if the model expects a single channel)
@@ -228,12 +229,10 @@ class MeterPredictor:
         return img_str, img_norm
 
     def predict_digit(self, digit):
-        print(f"Digit shape: {digit.shape}")
         predictions = self.digitmodel.predict(digit)
-        predicted_index = np.argmax(predictions)  # Get the index of the highest probability
-        confidence = float(predictions[0][predicted_index])  # Extract confidence score
-
-        return self.class_names[predicted_index], confidence
+        top3 = np.argsort(predictions[0])[-3:][::-1]
+        pairs = [(self.class_names[i], float(predictions[0][i])) for i in top3]
+        return pairs
 
     def predict_digits(self, digits):
         """

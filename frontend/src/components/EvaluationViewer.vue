@@ -6,14 +6,18 @@
       </n-flex>
       <n-flex justify="space-around" size="large">
         <span class="prediction" v-for="[i, digit] in JSON.parse(latestEval)[2].entries()" :key="i + 'd'">
-          {{ digit[0] }}
+          {{ (digit[0][0]=='r')? '↕' : digit[0][0] }}
         </span>
       </n-flex>
       <n-flex justify="space-around" size="large">
-        <span class="confidence" v-for="[i, digit] in JSON.parse(latestEval)[2].entries()" :key="i + 'e'">
-          {{ (digit[1] * 100).toFixed(2) }}
+        <span class="confidence" v-for="[i, digit] in JSON.parse(latestEval)[2].entries()" :key="i + 'e'" :style="{color: getColor(digit[0][1])}">
+          {{ (digit[0][1] * 100).toFixed(2) }}
         </span>
       </n-flex>
+      <n-divider />
+      <n-h3>Manual initial read</n-h3>
+      {{new Date(timestamp).toLocaleString()}}<br>
+      <n-input-number v-model:value="initialValue" placeholder="Readout" />
       <template #action>
         <n-flex justify="end" size="large">
           <n-button
@@ -27,22 +31,30 @@
 </template>
 
 <script setup>
-import { defineProps } from 'vue';
-import {NFlex, NCard, NButton} from "naive-ui";
+import {defineProps, ref} from 'vue';
+import {NFlex, NCard, NButton, NInputNumber, NDivider, NH3} from 'naive-ui';
 import router from "@/router";
 
 const props = defineProps([
     'meterid',
-    'latestEval'
+    'latestEval',
+    'timestamp'
 ]);
+
+const initialValue = ref(0);
 
 const finishSetup = async () => {
   // post to /api/setup/{name}/finish
   const r = await fetch(process.env.VUE_APP_HOST + '/api/setup/' + props.meterid + '/finish', {
     method: 'POST',
     headers: {
-      'secret': `${localStorage.getItem('secret')}`
-    }
+      'secret': `${localStorage.getItem('secret')}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      'value': initialValue.value,
+      'timestamp': props.timestamp
+    })
   });
 
   if (r.status === 200) {
@@ -50,6 +62,17 @@ const finishSetup = async () => {
   } else {
     console.log('Error finishing setup');
   }
+}
+
+function getColor(value) {
+  // Clamp the value between 0 and 1
+  value = Math.max(0, Math.min(1, value));
+
+  // Map value (0.0 to 1.0) to hue (0 = red, 60 = yellow, 120 = green)
+  const hue = value * 120;
+
+  // Using 100% saturation and 40% lightness for good contrast on white.
+  return `hsl(${hue}, 100%, 40%)`;
 }
 
 </script>

@@ -32,8 +32,9 @@
     </n-step>
     <n-step
       title="Evaluation"
+      v-if="lastPicture"
     >
-      <EvaluationViewer :latest-eval="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null" :meterid="id"/>
+      <EvaluationViewer :latest-eval="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null" :meterid="id" :timestamp="lastPicture.picture.timestamp"/>
     </n-step>
   </n-steps>
 <!--  <table v-if="evaluations.evals">-->
@@ -132,6 +133,7 @@ const getData = async () => {
   });
 
   let result = await response.json();
+
   threshold_low.value = result.threshold_low + "";
   threshold_high.value = result.threshold_high + "";
   segments.value = result.segments;
