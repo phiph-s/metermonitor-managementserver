@@ -1,86 +1,95 @@
 <template>
   <h2>Setup for {{ id }}</h2>
 
-  <img v-if="lastPicture" :src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data" alt="Watermeter"/>
-  <br>
-  <label>
-    <input type="number" v-model="segments"/>
-    Segments
-  </label><br>
-  <label>
-    <input type="checkbox" v-model="extendedLastDigit"/>
-    Extended last digit
-  </label><br>
-  <label>
-    <input type="checkbox" v-model="last3DigitsNarrow"/>
-    Last 3 digits are narrow
-  </label>
-  <hr>
-  <table>
-    <tr>
-      <td>Unprocessed</td>
-      <td>Thresholds applied</td>
-    </tr>
-    <tr>
-      <td>
-        <template v-for="encoded in evaluations.evals" :key="encoded">
-            <img class="digit" v-for="base64 in JSON.parse(encoded)[0]" :src="'data:image/jpeg;base64,' + base64" :key="base64" alt="Watermeter"/>
-            <br>
-        </template>
-      </td>
-      <td>
-        <template v-for="run in tresholdedImages" :key="run">
-            <img class="digit" v-for="base64 in run" :src="'data:image/jpeg;base64,' + base64" :key="base64" alt="Watermeter"/>
-            <br>
-        </template>
-      </td>
-    </tr>
-  </table>
+  <n-steps :current="current" :status="currentStatus">
+    <n-step
+      title="Extraction/Segmentation"
+    >
+      <SegmentationConfigurator
+          :last-picture="lastPicture"
+          :extended-last-digit="extendedLastDigit"
+          :last-3-digits-narrow="last3DigitsNarrow"
+          :segments="segments"
+          :encoded-latest="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null"
+          @update="updateSegmentationSettings"/>
+    </n-step>
+    <n-step
+      title="Pick Thresholds"
+    >
+      <ThresholdPicker
+          :encoded="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null"
+          :run="tresholdedImages[tresholdedImages.length-1]"
+          :invert="invert"
+          :threshold_low="threshold_low"
+          :threshold_high="threshold_high"
+          @update="updateThresholds"
+          @reevaluate="reevaluate"
+      />
+    </n-step>
+    <n-step
+      title="Evaluation"
+    >
+      <EvaluationViewer :latest-eval="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null" :meterid="id"/>
+    </n-step>
+  </n-steps>
+<!--  <table v-if="evaluations.evals">-->
+<!--    <tr>-->
+<!--      <td>Unprocessed</td>-->
+<!--      <td>Thresholds applied</td>-->
+<!--    </tr>-->
+<!--    <tr>-->
+<!--      <td>-->
+<!--        <template v-for="encoded in evaluations.evals" :key="encoded">-->
+<!--            <img class="digit" v-for="base64 in JSON.parse(encoded)[0]" :src="'data:image/jpeg;base64,' + base64" :key="base64" alt="Watermeter"/>-->
+<!--            <br>-->
+<!--        </template>-->
+<!--      </td>-->
+<!--      <td>-->
+<!--        <template v-for="run in tresholdedImages" :key="run">-->
+<!--            <img class="digit" v-for="base64 in run" :src="'data:image/jpeg;base64,' + base64" :key="base64" alt="Watermeter"/>-->
+<!--            <br>-->
+<!--        </template>-->
+<!--      </td>-->
+<!--    </tr>-->
+<!--  </table>-->
 
-  <label>
-    <input type="range" v-model="threshold_low" min="0" max="255" />
-    Low Threshold {{threshold_low}}
-  </label><br>
-  <label>
-    <input type="range" v-model="threshold_high" min="0" max="255" />
-    High Threshold {{threshold_high}}
-  </label><br>
-  <label>
-    <input type="checkbox" v-model="invert"/>
-    Invert colors
-  </label>
+<!--  <hr>-->
+<!--  Historic Evaluations-->
 
-  <hr>
-  Historic Evaluations
-
-  <table v-for="[i, encoded] in evaluations.evals.entries()" :key="i">
-    <tr>
-      <td v-for="base64 in JSON.parse(encoded)[1]" :key="base64">
-        <img class="digit" :src="'data:image/jpeg;base64,' + base64" alt="Watermeter"/>
-      </td>
-    </tr>
-    <tr>
-      <td v-for="[i, digit] in JSON.parse(encoded)[2].entries()" :key="i + '' + i" style="text-align: center;">
-        <span class="prediction" >
-          {{ digit[0] }}
-        </span>
-      </td>
-    </tr>
-    <tr>
-      <td v-for="[i, digit] in JSON.parse(encoded)[2].entries()" :key="i + '' + i" style="text-align: center;">
-        <span class="confidence" >
-          {{ (digit[1] * 100).toFixed(2) }}
-        </span>
-      </td>
-    </tr>
-  </table>
+<!--  <template v-if="evaluations.evals">-->
+<!--    <table v-for="[i, encoded] in evaluations.evals.entries()" :key="i">-->
+<!--      <tr>-->
+<!--        <td v-for="base64 in JSON.parse(encoded)[1]" :key="base64">-->
+<!--          <img class="digit" :src="'data:image/jpeg;base64,' + base64" alt="Watermeter"/>-->
+<!--        </td>-->
+<!--      </tr>-->
+<!--      <tr>-->
+<!--        <td v-for="[i, digit] in JSON.parse(encoded)[2].entries()" :key="i + '' + i" style="text-align: center;">-->
+<!--          <span class="prediction" >-->
+<!--            {{ digit[0] }}-->
+<!--          </span>-->
+<!--        </td>-->
+<!--      </tr>-->
+<!--      <tr>-->
+<!--        <td v-for="[i, digit] in JSON.parse(encoded)[2].entries()" :key="i + '' + i" style="text-align: center;">-->
+<!--          <span class="confidence" >-->
+<!--            {{ (digit[1] * 100).toFixed(2) }}-->
+<!--          </span>-->
+<!--        </td>-->
+<!--      </tr>-->
+<!--    </table>-->
+<!--  </template>-->
 
 </template>
 
 <script setup>
-import {onMounted, ref, watch} from 'vue';
+import {onMounted, ref} from 'vue';
 import router from "@/router";
+import { NSteps, NStep } from 'naive-ui';
 import { useRoute } from 'vue-router';
+import SegmentationConfigurator from "@/components/SegmentationConfigurator.vue";
+import ThresholdPicker from "@/components/ThresholdPicker.vue";
+import EvaluationViewer from "@/components/EvaluationViewer.vue";
 
 const route = useRoute();
 const id = route.params.id;
@@ -98,21 +107,21 @@ const last3DigitsNarrow = ref(false);
 const invert = ref(false);
 
 const getData = async () => {
-  let response = await fetch('/api/watermeters/' + id, {
+  let response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters/' + id, {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
   lastPicture.value = await response.json();
 
-  response = await fetch('/api/watermeters/' + id + '/evals', {
+  response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters/' + id + '/evals', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
   evaluations.value = await response.json();
 
-  response = await fetch('/api/settings/' + id, {
+  response = await fetch(process.env.VUE_APP_HOST + '/api/settings/' + id, {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
@@ -125,9 +134,6 @@ const getData = async () => {
   extendedLastDigit.value = result.extended_last_digit === 1;
   last3DigitsNarrow.value = result.shrink_last_3 === 1;
   invert.value = result.invert === 1;
-
-  refreshThresholds({low: threshold_low.value, high: threshold_high.value}, false);
-
 }
 
 onMounted(() => {
@@ -139,38 +145,32 @@ onMounted(() => {
   getData();
 });
 
-watch([threshold_low, threshold_high, invert], () => {
-  refreshThresholds({low: threshold_low.value, high: threshold_high.value});
-});
+const updateThresholds = async (data) => {
+  threshold_low.value = data.threshold_low;
+  threshold_high.value = data.threshold_high;
+  invert.value = data.invert;
 
-watch([segments, extendedLastDigit, last3DigitsNarrow], () => {
   updateSettings();
-});
-
-let refreshing = false;
-
-const refreshThresholds = async (newThresholds, update = true) => {
-  if (refreshing) return;
-  threshold_low.value = newThresholds.low;
-  threshold_high.value = newThresholds.high;
-  refreshing = true;
-
-  tresholdedImages.value = [];
-  for (let i = 0; i < evaluations.value.evals.length; i++) {
-    const encoded = evaluations.value.evals[i];
-    const base64s = JSON.parse(encoded)[0];
-    const newBase64s = [];
-    for (let j = 0; j < base64s.length; j++) {
-      const newBase64 = await thresholdImage(base64s[j], newThresholds.low, newThresholds.high);
-      newBase64s.push(newBase64);
-    }
-    tresholdedImages.value.push(newBase64s);
-  }
-
-  refreshing = false;
-  if (update) updateSettings();
 }
 
+const reevaluate = async () => {
+  await fetch(process.env.VUE_APP_HOST + '/api/reevaluate_latest/' + id, {
+    method: 'GET',
+    headers: {
+      'secret': `${localStorage.getItem('secret')}`,
+    },
+  });
+  getData();
+}
+
+const updateSegmentationSettings = async (data) => {
+  segments.value = data.segments;
+  extendedLastDigit.value = data.extendedLastDigit;
+  last3DigitsNarrow.value = data.last3DigitsNarrow;
+
+  await updateSettings();
+  reevaluate();
+}
 const updateSettings = async () => {
 
   const settings = {
@@ -183,7 +183,7 @@ const updateSettings = async () => {
     invert: invert.value
   }
 
-  await fetch('/api/settings', {
+  await fetch(process.env.VUE_APP_HOST + '/api/settings', {
     method: 'POST',
     headers: {
       'secret': `${localStorage.getItem('secret')}`,
@@ -193,39 +193,9 @@ const updateSettings = async () => {
   });
 }
 
-async function thresholdImage(base64, thresholdLow, thresholdHigh) {
-  // use endpoint /api/evaluate/single
-  const response = await fetch('/api/evaluate/single', {
-    method: 'POST',
-    headers: {
-      'secret': `${localStorage.getItem('secret')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      base64str: base64,
-      threshold_low: thresholdLow,
-      threshold_high: thresholdHigh,
-      invert: invert.value
-    })
-  });
-  const result = await response.json();
-  return result.base64;
-}
+
 
 </script>
 
 <style scoped>
-.digit{
-  margin: 3px;
-}
-
-.prediction{
-  margin: 3px;
-  font-size: 20px;
-}
-
-.confidence{
-  margin: 3px;
-  font-size: 10px;
-}
 </style>

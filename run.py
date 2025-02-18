@@ -32,7 +32,8 @@ with open('config.yml') as file:
                     picture_width INTEGER,
                     picture_height INTEGER,
                     picture_length INTEGER,
-                    picture_data TEXT
+                    picture_data TEXT,
+                    setup BOOLEAN DEFAULT 0
                 )
             ''')
     cursor.execute('''

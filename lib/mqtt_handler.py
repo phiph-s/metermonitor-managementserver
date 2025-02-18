@@ -70,7 +70,7 @@ class MQTTHandler:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO watermeters 
-                VALUES (?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?, 0)
             ''', (
                 data['name'],
                 data['picture_number'],

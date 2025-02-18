@@ -1,24 +1,42 @@
 <template>
-  <h2>Discovery</h2>
+  <n-h2>Discovery</n-h2>
 
   Waiting for setup:
 
   <ul>
-    <li v-for="item in waterMeters" :key="item.id">
+    <li v-for="item in discoveredMeters" :key="item.id">
       <router-link :to="'/setup/'+item">{{ item }}</router-link>
+    </li>
+  </ul>
+
+  <n-h2>Watermeters:</n-h2>
+
+  <ul>
+    <li v-for="item in waterMeters" :key="item.id">
+      <router-link :to="'/meter/'+item">{{ item }}</router-link>
     </li>
   </ul>
 </template>
 
 <script setup>
 import {onMounted, ref} from 'vue';
+import {NH2} from 'naive-ui';
 import router from "@/router";
 
+const discoveredMeters = ref([]);
 const waterMeters = ref([]);
+
 
 // add secret to header of fetch request
 const getData = async () => {
-  const response = await fetch('/api/discovery', {
+  let response = await fetch(process.env.VUE_APP_HOST + '/api/discovery', {
+    headers: {
+      'secret': `${localStorage.getItem('secret')}`
+    }
+  });
+  discoveredMeters.value = await response.json();
+
+  response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }

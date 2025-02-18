@@ -13,7 +13,9 @@ import sqlite3
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
+from lib.functions import reevaluate_latest_picture
 from lib.meter_processing.meter_processing import MeterPredictor
+
 
 # http server class
 # that serves the json api endpoints:
@@ -84,7 +86,7 @@ def prepare_setup_app(config, lifespan):
     def get_discovery():
         db = db_connection()
         cursor = db.cursor()
-        cursor.execute("SELECT name FROM watermeters")
+        cursor.execute("SELECT name FROM watermeters WHERE setup = 0")
         existing_meters = {row[0] for row in cursor.fetchall()}
         return list(existing_meters)
 
@@ -111,10 +113,19 @@ def prepare_setup_app(config, lifespan):
 
     @app.get("/api/watermeters", dependencies=[Depends(authenticate)])
     def get_watermeters():
-        print ("get_watermeters")
-        cursor = db_connection().cursor()
+        db = db_connection()
+        cursor = db.cursor()
         cursor.execute("SELECT name FROM watermeters")
-        return {"watermeters": [row[0] for row in cursor.fetchall()]}
+        existing_meters = {row[0] for row in cursor.fetchall()}
+        return list(existing_meters)
+
+    @app.post("/api/setup/{name}/finish", dependencies=[Depends(authenticate)])
+    def post_setup_finished(name: str):
+        db = db_connection()
+        cursor = db.cursor()
+        cursor.execute("UPDATE watermeters SET setup = 1 WHERE name = ?", (name,))
+        db.commit()
+        return {"message": "Setup completed"}
 
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])
     def get_watermeter(name: str):
@@ -145,7 +156,7 @@ def prepare_setup_app(config, lifespan):
             """
             INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, 
             picture_timestamp, picture_width, picture_height, picture_length, picture_data) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 config.name,
@@ -182,7 +193,6 @@ def prepare_setup_app(config, lifespan):
     def set_settings(settings: SettingsRequest):
         db = db_connection()
         cursor = db.cursor()
-        print(settings.shrink_last_3)
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, segments, shrink_last_3, extended_last_digit, invert) 
@@ -195,6 +205,10 @@ def prepare_setup_app(config, lifespan):
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}
+
+    @app.get("/api/reevaluate_latest/{name}", dependencies=[Depends(authenticate)])
+    def reevaluate_latest(name: str):
+        reevaluate_latest_picture(config['dbfile'], name, meter_preditor)
 
     # GET endpoint for retrieving evaluations
     @app.get("/api/watermeters/{name}/evals", dependencies=[Depends(authenticate)])
