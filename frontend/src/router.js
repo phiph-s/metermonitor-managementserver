@@ -4,6 +4,7 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import DiscoveryView from "@/views/DiscoveryView.vue";
 import SecretView from "@/views/SecretView.vue";
 import SetupView from "@/views/SetupView.vue";
+import MeterView from "@/views/MeterView.vue";
 
 const routes = [
   {
@@ -25,6 +26,11 @@ const routes = [
     path: '/setup/:id',
     name: 'Setup',
     component: SetupView
+  },
+  {
+    path: '/meter/:id',
+    name: 'Meter',
+    component: MeterView
   }
 ];
 
