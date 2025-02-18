@@ -7,13 +7,8 @@ import cv2
 import numpy as np
 from PIL import Image
 import torch
-from pytesseract import pytesseract
-from sklearn.cluster import KMeans
-from torchvision.models import resnet18
-from torch import nn
-from torchvision.transforms import transforms
 from ultralytics import YOLO
-from transformers import pipeline
+from tensorflow.keras.models import load_model
 
 class MeterPredictor:
     """
@@ -35,21 +30,8 @@ class MeterPredictor:
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Define the model architecture (same as during training)
-        self.digitmodel = resnet18(pretrained=False)  # Ensure pretrained=False if loading your weights
-        self.digitmodel.fc = nn.Linear(self.digitmodel.fc.in_features, 11)  # Adjust for your classes
-
-        # Load the saved weights
-        state_dict = torch.load(digit_classifier_model_path, map_location=torch.device("cpu"))
-        self.digitmodel.load_state_dict(state_dict)
-
-        # Set the model to evaluation mode
-        self.digitmodel.eval()
-
-        # Move the model to the appropriate device (CPU or GPU)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.digitmodel.to(self.device)
-
-        self.classification_pipe = pipeline("image-classification", model="farleyknight/mnist-digit-classification-2022-09-04")
+        self.digitmodel = load_model('models/th_digit_classifier.h5')
+        self.class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'r']
 
     def predict_single_image(self, input_image, segments=7, contrast=1.0, padding=0.0, enhance_sharpness=False, extended_last_digit=False, shrink_last_3=False):
         """
@@ -219,13 +201,23 @@ class MeterPredictor:
             in_middle = np.any(component_region == label)
 
             if in_middle:
-                color = (0, 0, 0)  # Red in BGR
+                color = (0, 0, 0)
             else:
-                color = (255, 255, 255)  # Black
+                color = (255, 255, 255)
 
             color_image[labels == label] = color
 
-        pil_img = Image.fromarray(color_image)
+        #back to greyscale
+        color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
+        img_resized = cv2.resize(color_image, (20, 32))
+        img_norm = img_resized.astype('float32') / 255.0
+
+        # Add a channel dimension (if the model expects a single channel)
+        img_norm = np.expand_dims(img_norm, axis=-1)
+        # Add a batch dimension
+        img_norm = np.expand_dims(img_norm, axis=0)
+
+        pil_img = Image.fromarray(img_resized)
 
         buffered = BytesIO()
         pil_img.save(buffered, format="JPEG")
@@ -233,43 +225,15 @@ class MeterPredictor:
         # to string
         img_str = img_str.decode('utf-8')
 
-        return img_str, color_image
-
-    def resize_and_pad(self, im, desired_size, fill_color=(0, 0, 0)):
-        # Get the original size
-        old_width, old_height = im.size
-
-        # Calculate the scaling factor to fit the image within the desired_size square
-        scale = desired_size / max(old_width, old_height)
-        new_width = int(old_width * scale)
-        new_height = int(old_height * scale)
-
-        # Resize the image with the calculated scale factor
-        im_resized = im.resize((new_width, new_height))
-
-        # Create a new square image with the desired size and fill color (black by default)
-        new_im = Image.new("RGB", (desired_size, desired_size), fill_color)
-
-        # Compute top-left coordinates to paste the resized image onto the center of the new image
-        top_left_x = (desired_size - new_width) // 2
-        top_left_y = (desired_size - new_height) // 2
-
-        # Paste the resized image onto the square background
-        new_im.paste(im_resized, (top_left_x, top_left_y))
-
-        return new_im
+        return img_str, img_norm
 
     def predict_digit(self, digit):
-        # invert digit
-        digit = cv2.bitwise_not(digit)
-        pil_img = Image.fromarray(digit)
-        pil_img = self.resize_and_pad(pil_img, 224)
+        print(f"Digit shape: {digit.shape}")
+        predictions = self.digitmodel.predict(digit)
+        predicted_index = np.argmax(predictions)  # Get the index of the highest probability
+        confidence = float(predictions[0][predicted_index])  # Extract confidence score
 
-        r = self.classification_pipe(pil_img)
-        class_name = r[0]['label']
-        confidence = r[0]['score']
-
-        return class_name, confidence
+        return self.class_names[predicted_index], confidence
 
     def predict_digits(self, digits):
         """
