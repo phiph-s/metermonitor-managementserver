@@ -1,27 +1,20 @@
 <template>
-  <n-h2>Discovery</n-h2>
+  <n-h2>Waiting for setup</n-h2>
+  <n-flex>
+      <WaterMeterCard v-for="item in discoveredMeters" :key="item.id" :last_updated="item[1]" :meter_name="item[0]" :setup="true"/>
+  </n-flex>
 
-  Waiting for setup:
-
-  <ul>
-    <li v-for="item in discoveredMeters" :key="item.id">
-      <router-link :to="'/setup/'+item">{{ item }}</router-link>
-    </li>
-  </ul>
-
-  <n-h2>Watermeters:</n-h2>
-
-  <ul>
-    <li v-for="item in waterMeters" :key="item.id">
-      <router-link :to="'/meter/'+item">{{ item }}</router-link>
-    </li>
-  </ul>
+  <n-h2>Watermeters</n-h2>
+  <n-flex>
+      <WaterMeterCard v-for="item in waterMeters" :key="item.id" :last_updated="item[1]" :meter_name="item[0]" :setup="false"/>
+  </n-flex>
 </template>
 
 <script setup>
 import {onMounted, ref} from 'vue';
-import {NH2} from 'naive-ui';
+import {NH2, NFlex} from 'naive-ui';
 import router from "@/router";
+import WaterMeterCard from "@/components/WaterMeterCard.vue";
 
 const discoveredMeters = ref([]);
 const waterMeters = ref([]);
@@ -34,14 +27,14 @@ const getData = async () => {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
-  discoveredMeters.value = await response.json();
+  discoveredMeters.value = (await response.json())["watermeters"];
 
   response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
-  waterMeters.value = await response.json();
+  waterMeters.value = (await response.json())["watermeters"];
 }
 
 onMounted(() => {

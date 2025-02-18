@@ -84,11 +84,9 @@ def prepare_setup_app(config, lifespan):
 
     @app.get("/api/discovery", dependencies=[Depends(authenticate)])
     def get_discovery():
-        db = db_connection()
-        cursor = db.cursor()
-        cursor.execute("SELECT name FROM watermeters WHERE setup = 0")
-        existing_meters = {row[0] for row in cursor.fetchall()}
-        return list(existing_meters)
+        cursor = db_connection().cursor()
+        cursor.execute("SELECT name, picture_timestamp FROM watermeters WHERE setup = 0")
+        return {"watermeters": [row for row in cursor.fetchall()]}
 
     @app.post("/api/evaluate/single", dependencies=[Depends(authenticate)])
     def evaluate(
@@ -113,11 +111,9 @@ def prepare_setup_app(config, lifespan):
 
     @app.get("/api/watermeters", dependencies=[Depends(authenticate)])
     def get_watermeters():
-        db = db_connection()
-        cursor = db.cursor()
-        cursor.execute("SELECT name FROM watermeters")
-        existing_meters = {row[0] for row in cursor.fetchall()}
-        return list(existing_meters)
+        cursor = db_connection().cursor()
+        cursor.execute("SELECT name, picture_timestamp FROM watermeters WHERE setup = 1")
+        return {"watermeters": [row for row in cursor.fetchall()]}
 
     @app.post("/api/setup/{name}/finish", dependencies=[Depends(authenticate)])
     def post_setup_finished(name: str):

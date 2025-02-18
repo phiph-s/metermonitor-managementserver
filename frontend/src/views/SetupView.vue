@@ -1,4 +1,8 @@
 <template>
+  <router-link to="/"><n-button quaternary round type="error" size="small" style="padding: 0">
+     Back
+  </n-button></router-link>
+
   <h2>Setup for {{ id }}</h2>
 
   <n-steps :current="current" :status="currentStatus">
@@ -85,7 +89,7 @@
 <script setup>
 import {onMounted, ref} from 'vue';
 import router from "@/router";
-import { NSteps, NStep } from 'naive-ui';
+import { NSteps, NStep, NButton } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import SegmentationConfigurator from "@/components/SegmentationConfigurator.vue";
 import ThresholdPicker from "@/components/ThresholdPicker.vue";
