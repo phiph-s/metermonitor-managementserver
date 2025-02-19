@@ -1,0 +1,12 @@
+{
+  "name": "Meter Monitor",
+  "version": "0.1",
+  "slug": "meter_monitor",
+  "description": "Integrate ESP32 based meter monitor cams with Home Assistant using AI",
+  "startup": "services",
+  "arch": ["armv7", "armhf", "aarch64", "amd64", "i386"],
+  "ingress": true,
+  "ports": {
+    "8070/tcp": 8070
+  }
+}
