@@ -1,7 +1,7 @@
 <template>
   <n-card>
     <n-flex justify="space-around" size="large" v-if="encoded">
-      <img class="digit" v-for="[i,base64] in JSON.parse(encoded)[0].entries()" :src="'data:image/jpeg;base64,' + base64" :key="i+'a'" alt="D" style="max-width: 20px"/>
+      <img class="digit" v-for="[i,base64] in JSON.parse(encoded)[0].entries()" :src="'data:image/jpeg;base64,' + base64" :key="i+'a'" alt="D" style="max-width: 40px"/>
     </n-flex>
     <n-flex justify="space-around" size="large" v-if="tresholdedImages">
       <img class="digit" v-for="[i,base64] in tresholdedImages.entries()" :src="'data:image/jpeg;base64,' + base64" :key="i+'b'" alt="Watermeter"/>

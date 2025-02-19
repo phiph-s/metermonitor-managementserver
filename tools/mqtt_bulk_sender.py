@@ -63,7 +63,7 @@ def build_message(file_path, picture_number):
         timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(int(timestamp)))
 
     return {
-        "name": "HauptzaehlerStream2",
+        "name": "HauptzaehlerStream10",
         "picture_number": picture_number,
         "WiFi-RSSI": -57,
         "picture": {
@@ -101,7 +101,7 @@ def main():
 
     # Send remaining images with a 1-second delay
     for idx, image_file in enumerate(images[1:], start=2):
-        time.sleep(1)
+        time.sleep(0.5)
         msg = build_message(image_file, picture_number=idx)
         client.publish(MQTT_TOPIC, json.dumps(msg))
         print(f"Sent image: {image_file}")

@@ -30,7 +30,7 @@ class MeterPredictor:
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Define the model architecture (same as during training)
-        self.digitmodel = load_model('models/th_digit_classifier.h5')
+        self.digitmodel = load_model('models/th_digit_classifier_large.h5')
         self.class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'r']
 
     def predict_single_image(self, input_image, segments=7, contrast=1.0, padding=0.0, enhance_sharpness=False, extended_last_digit=False, shrink_last_3=False):
@@ -171,60 +171,56 @@ class MeterPredictor:
         if invert:
             digit = cv2.bitwise_not(digit)
 
-        # Convert the digit image to grayscale
+        # Convert the digit image to grayscale.
         digit = cv2.cvtColor(digit, cv2.COLOR_BGR2GRAY)
 
-        # Apply the thresholding to get black areas
+        # Apply thresholding to get a binary image.
         digit = cv2.inRange(digit, threshold_low, threshold_high)
 
-        #inverted = cv2.bitwise_not(digit)
+        # --- Crop to content with extra vertical padding (10% on top and bottom) ---
+        # Assuming background is white (255) and the content is darker.
+        coords = np.column_stack(np.where(digit != 255))
+        if coords.size > 0:
+            # Get the bounding box of non-background pixels.
+            y0, x0 = coords.min(axis=0)
+            y1, x1 = coords.max(axis=0)
+            # Compute the height of the content.
+            content_height = y1 - y0 + 1
+            # Calculate 10% of the content height as padding.
+            pad = int(0.1 * content_height)
+            # Expand the bounding box vertically (making sure we don't go out of bounds).
+            new_y0 = max(0, y0 - pad)
+            new_y1 = min(digit.shape[0] - 1, y1 + pad)
+            digit_cropped = digit[new_y0:new_y1 + 1, x0:x1 + 1]
+        else:
+            # If no content is found, use the whole image.
+            digit_cropped = digit
 
-        # Find connected components (8-connectivity by default)
-        #num_labels, labels = cv2.connectedComponents(inverted)
+        # --- Resize while preserving aspect ratio ---
+        target_width, target_height = 40, 64
+        h, w = digit_cropped.shape[:2]
+        # Determine the scaling factor so that the image fits within the target dimensions.
+        scale = min(target_width / w, target_height / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        digit_resized = cv2.resize(digit_cropped, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-        # Create a BGR color image with white background
-        #color_image = np.full((*digit.shape, 3), (255, 255, 255), dtype=np.uint8)
+        # --- Place the resized image on a white canvas of the target size ---
+        digit_padded = np.full((target_height, target_width), 255, dtype=np.uint8)
+        x_offset = (target_width - new_w) // 2
+        y_offset = (target_height - new_h) // 2
+        digit_padded[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = digit_resized
 
-        # Get the dimensions of the image
-        height, width = digit.shape
+        # --- Normalize & add extra dimensions ---
+        img_norm = digit_padded.astype('float32') / 255.0
+        img_norm = np.expand_dims(img_norm, axis=-1)  # add channel dimension
+        img_norm = np.expand_dims(img_norm, axis=0)  # add batch dimension
 
-        # # Calculate the middle 60% region (with 20% padding on all sides)
-        # start_x = int(0.4 * width)
-        # end_x = int(0.6 * width)
-        # start_y = int(0.4 * height)
-        # end_y = int(0.6 * height)
-        #
-        # # Assign color based on component's presence in the middle region
-        # for label in range(1, num_labels):
-        #     # Slice the labels to the middle region and check for any occurrence of the current label
-        #     component_region = labels[start_y:end_y, start_x:end_x]
-        #     in_middle = np.any(component_region == label)
-        #
-        #     if in_middle:
-        #         color = (0, 0, 0)
-        #     else:
-        #         color = (255, 255, 255)
-        #
-        #     color_image[labels == label] = color
-        #
-        # #back to greyscale
-        #color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
-
-        img_resized = cv2.resize(digit, (20, 32))
-        img_norm = img_resized.astype('float32') / 255.0
-
-        # Add a channel dimension (if the model expects a single channel)
-        img_norm = np.expand_dims(img_norm, axis=-1)
-        # Add a batch dimension
-        img_norm = np.expand_dims(img_norm, axis=0)
-
-        pil_img = Image.fromarray(img_resized)
-
+        # --- Encode image to base64 ---
+        pil_img = Image.fromarray(digit_padded)
         buffered = BytesIO()
         pil_img.save(buffered, format="JPEG")
-        img_str = base64.b64encode(buffered.getvalue())
-        # to string
-        img_str = img_str.decode('utf-8')
+        img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
         return img_str, img_norm
 
@@ -234,6 +230,7 @@ class MeterPredictor:
         pairs = [(self.class_names[i], float(predictions[0][i])) for i in top3]
         return pairs
 
+
     def predict_digits(self, digits):
         """
         Digits are np arrays
@@ -242,7 +239,7 @@ class MeterPredictor:
 
         # Predict each digit
         predicted_digits = []
-        for digit in digits:
+        for i,digit in enumerate(digits):
             digit = self.predict_digit(digit)
             predicted_digits.append(digit)
 
