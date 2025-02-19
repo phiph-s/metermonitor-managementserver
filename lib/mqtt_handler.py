@@ -15,9 +15,10 @@ from lib.meter_processing.meter_processing import MeterPredictor
 
 
 class MQTTHandler:
-    def __init__(self, db_file: str = 'watermeters.db', forever: bool = False):
+    def __init__(self,config, db_file: str = 'watermeters.db', forever: bool = False):
         self.db_file = db_file
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.config = config
         self.forever = forever
         self.meter_preditor = MeterPredictor(
             yolo_model_path = "models/yolo-best-obb.pt",
@@ -125,7 +126,7 @@ class MQTTHandler:
                 ))
             conn.commit()
             print(f"MQTT-Handler: Data saved for {data['name']}")
-        reevaluate_latest_picture(self.db_file, data['name'], self.meter_preditor)
+        reevaluate_latest_picture(self.db_file, data['name'], self.meter_preditor, self.config)
 
     def start(self,
               broker: str = 'localhost',

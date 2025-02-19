@@ -125,7 +125,7 @@ def prepare_setup_app(config, lifespan):
         cursor = db.cursor()
         cursor.execute("UPDATE watermeters SET setup = 1 WHERE name = ?", (name,))
         db.commit()
-        add_history_entry(config['dbfile'], name, data.value, timestamp=data.timestamp, manual=True)
+        add_history_entry(config['dbfile'], name, data.value, data.timestamp, config, manual=True)
         return {"message": "Setup completed"}
 
     @app.post("/api/setup/{name}/reset", dependencies=[Depends(authenticate)])
@@ -227,7 +227,7 @@ def prepare_setup_app(config, lifespan):
 
     @app.get("/api/reevaluate_latest/{name}", dependencies=[Depends(authenticate)])
     def reevaluate_latest(name: str):
-        reevaluate_latest_picture(config['dbfile'], name, meter_preditor)
+        reevaluate_latest_picture(config['dbfile'], name, meter_preditor, config)
 
     # GET endpoint for retrieving evaluations
     @app.get("/api/watermeters/{name}/evals", dependencies=[Depends(authenticate)])

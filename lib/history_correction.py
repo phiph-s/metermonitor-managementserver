@@ -13,7 +13,7 @@ def generate_number_variations(data):
 
     # Filter out values with confidence < 3%
     filtered_data = [
-        [(char, conf) for char, conf in predictions if conf >= 0.03]
+        [(char, conf) for char, conf in predictions if conf >= 0.075]
         for predictions in core_data
     ]
 
@@ -68,6 +68,10 @@ def correct_value(db_file:str, name: str, new_eval, max_flow = 0.7):
         max_flow /= 60.0
         # get the time difference in minutes
         time_diff = (new_time - last_time).seconds / 60.0
+
+        if time_diff == 0:
+            conn.commit()
+            return None
 
         variations = sorted(variations, key=lambda x: x[1], reverse=True)
 

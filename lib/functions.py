@@ -11,7 +11,7 @@ from tensorflow import timestamp
 from lib.history_correction import correct_value
 
 
-def reevaluate_latest_picture(db_file: str, name:str, meter_preditor):
+def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
 
@@ -74,9 +74,9 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor):
                         FROM history
                         WHERE name = ?
                         ORDER BY ROWID DESC
-                        LIMIT 30
+                        LIMIT ?
                     )
-                ''', (name, name))
+                ''', (name, name, config['max_history']))
 
         # remove old evaluations (keep 5)
         cursor.execute('''
@@ -87,14 +87,14 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor):
                        FROM evaluations
                        WHERE name = ?
                        ORDER BY ROWID DESC
-                       LIMIT 30
+                       LIMIT ?
                    )
-               ''', (name, name))
+               ''', (name, name, config['max_evals']))
 
         conn.commit()
         print(f"Meter-Eval: Prediction saved for {name}")
 
-def add_history_entry(db_file: str, name: str, value: int, timestamp: str, manual: bool = False):
+def add_history_entry(db_file: str, name: str, value: int, timestamp: str, config, manual: bool = False):
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -116,9 +116,9 @@ def add_history_entry(db_file: str, name: str, value: int, timestamp: str, manua
                 FROM history
                 WHERE name = ?
                 ORDER BY ROWID DESC
-                LIMIT 30
+                LIMIT ?
             )
-        ''', (name, name))
+        ''', (name, name, config['max_history']))
 
         conn.commit()
         print(f"Meter-Eval: History entry added for {name}")

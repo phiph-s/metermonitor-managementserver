@@ -82,7 +82,7 @@ with open('config.yml') as file:
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             def run_mqtt():
-                mqtt_handler = MQTTHandler(db_file=config['dbfile'], forever=True)
+                mqtt_handler = MQTTHandler(config, db_file=config['dbfile'], forever=True)
                 mqtt_handler.start(**MQTT_CONFIG)
 
             thread = threading.Thread(target=run_mqtt, daemon=True)
