@@ -24,28 +24,35 @@
     </div>
     <div style="padding-left: 20px">
       <n-h2>Details of {{id}}</n-h2>
-      <template v-if="evaluations && evaluations.evals">
-        <template v-for="[i, encoded] in evaluations.evals.slice().reverse().entries()" :key="i">
-          <n-flex>
-            {{new Date(JSON.parse(encoded)[3]).toLocaleString()}}<br>
-            {{ (JSON.parse(encoded)[2].reduce((partialSum, a) => partialSum * a[0][1], 1) * 100).toFixed(1) }}%<br>
-            <table >
+      <template v-if="decodedEvals">
+        <template v-for="[i, evalDecoded] in decodedEvals.entries()" :key="i">
+          <n-flex :class="{redbg: evalDecoded[4] == null}">
+            {{new Date(evalDecoded[3]).toLocaleString()}}<br>
+            {{ (evalDecoded[2].reduce((partialSum, a) => partialSum * a[0][1], 1) * 100).toFixed(1) }}%<br>
+            <table>
               <tr>
-                <td v-for="base64 in JSON.parse(encoded)[1]" :key="base64">
+                <td v-for="base64 in evalDecoded[1]" :key="base64">
                   <img class="digit" :src="'data:image/jpeg;base64,' + base64" alt="Watermeter"/>
                 </td>
               </tr>
               <tr>
-                <td v-for="[i, digit] in JSON.parse(encoded)[2].entries()" :key="i + '' + i" style="text-align: center;">
+                <td v-for="[i, digit] in evalDecoded[2].entries()" :key="i + 'v'" style="text-align: center;">
                   <span class="prediction" >
                     {{ (digit[0][0]=='r')? '↕' : digit[0][0] }}
                   </span>
                 </td>
               </tr>
               <tr>
-                <td v-for="[i, digit] in JSON.parse(encoded)[2].entries()" :key="i + '' + i" style="text-align: center;">
+                <td v-for="[i, digit] in evalDecoded[2].entries()" :key="i + 'e'" style="text-align: center;">
                   <span class="confidence" :style="{color: getColor(digit[0][1])}">
                     {{ Math.round(digit[0][1] * 100) }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="evalDecoded[4]">
+                <td v-for="[i, digit] in (evalDecoded[4] + '').padStart(evalDecoded[1].length, '0').split('').entries()" :key="i + 'f'" style="text-align: center;">
+                  <span class="prediction red" v-if="digit !== evalDecoded[2][i][0][0]">
+                    {{ digit }}
                   </span>
                 </td>
               </tr>
@@ -80,6 +87,13 @@ const data = ref(null);
 const evaluations = ref(null);
 const history = ref(null);
 
+
+const decodedEvals = computed(
+  () => {
+    console.log(evaluations.value ? evaluations.value.evals.map((encoded) => JSON.parse(encoded)).reverse() : [])
+    return evaluations.value ? evaluations.value.evals.map((encoded) => JSON.parse(encoded)).reverse() : []
+  }
+);
 function getColor(value) {
   // Clamp the value between 0 and 1
   value = Math.max(0, Math.min(1, value));
@@ -118,7 +132,7 @@ const series = computed(() => {
   if (history.value) {
     return [{
       name: 'Consumption m³',
-      data: history.value.history.map((item) => [item[1], item[0] / 1000])
+      data: history.value.history.map((item) => [new Date(item[1]), item[0] / 1000])
     }]
   } else {
     return [];
@@ -135,7 +149,9 @@ const options = {
   xaxis: {
     type: 'datetime',
     labels: {
-      format: 'dd MMM HH:mm'
+      formatter: function (value, timestamp) {
+      return new Date(timestamp).toLocaleString() // The formatter function overrides format property
+    },
     },
     title: {
       text: 'Time'
@@ -181,6 +197,14 @@ const resetToSetup = async () => {
 .prediction{
   margin: 3px;
   font-size: 20px;
+}
+
+.red{
+  color: red;
+}
+
+.redbg{
+  background-color: rgba(255, 0, 0, 0.1);
 }
 
 .confidence{

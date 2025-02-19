@@ -42,7 +42,61 @@ def replace_rotation(value, r_last_value, segments=8):
 
     return nstr
 
+
 def correct_value(db_file:str, name: str, new_eval, max_flow = 0.7):
+
+    # get last evaluation
+    with sqlite3.connect(db_file) as conn:
+        cursor = conn.cursor()
+        segments = len(new_eval[2])
+        # get last history entry
+        cursor.execute("SELECT value, timestamp FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
+        row = cursor.fetchone()
+        if not row:
+            conn.commit()
+            return None
+        last_value = str(row[0]).zfill(segments)
+        last_time = datetime.fromisoformat(row[1])
+        new_time = datetime.fromisoformat(new_eval[3])
+        new_results = new_eval[2]
+
+        max_flow /= 60.0
+        # get the time difference in minutes
+        time_diff = (new_time - last_time).seconds / 60.0
+        if time_diff <= 0:
+            conn.commit()
+            print("Time difference is 0 or negative")
+            return None
+
+        correctedValue = ""
+        totalConfidence = 1.0
+        for i, lastChar in enumerate(last_value):
+            predictions = new_results[i]
+
+            for prediction in predictions:
+                tempValue = correctedValue
+                tempConfidence = totalConfidence
+                if prediction[0] == 'r':
+                    tempValue += lastChar
+                    tempConfidence *= prediction[1]
+                else:
+                    tempValue += prediction[0]
+                    tempConfidence *= prediction[1]
+
+                if int(tempValue) >= int(last_value[:i+1]):
+                    correctedValue = tempValue
+                    totalConfidence = tempConfidence
+                    break
+
+        # get the flow rate
+        flow_rate = (int(correctedValue) - int(last_value)) / 1000.0 / time_diff
+        if flow_rate > max_flow or flow_rate < 0:
+            print("Flow rate is too high or negative")
+            return None
+        print ("Value accepted for time", new_time, "flow rate", flow_rate)
+        return int(correctedValue)
+
+def correct_value_legacy(db_file:str, name: str, new_eval, max_flow = 0.7):
 
     # get last evaluation
     with sqlite3.connect(db_file) as conn:

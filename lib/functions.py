@@ -44,14 +44,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
         else:
             processed, digits = meter_preditor.apply_thresholds(digits, thresholds, invert=settings[5])
             prediction = meter_preditor.predict_digits(digits)
-        cursor.execute('''
-                   INSERT INTO evaluations
-                   VALUES (?,?)
-               ''', (
-            name,
-            json.dumps([result, processed, prediction, timestamp])
-        ))
 
+        value = None
         if setup:
             value = correct_value(db_file, name, [result, processed, prediction, timestamp])
             if value is not None:
@@ -77,6 +71,14 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
                         LIMIT ?
                     )
                 ''', (name, name, config['max_history']))
+
+        cursor.execute('''
+                   INSERT INTO evaluations
+                   VALUES (?,?)
+               ''', (
+            name,
+            json.dumps([result, processed, prediction, timestamp, value])
+        ))
 
         # remove old evaluations (keep 5)
         cursor.execute('''
