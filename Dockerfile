@@ -1,5 +1,5 @@
 # Basis-Image wählen (Python 3.9 als Beispiel)
-FROM python:3.12-slim
+FROM ultralytics/ultralytics:latest-cpu
 
 # Arbeitsverzeichnis festlegen
 WORKDIR /docker-app
