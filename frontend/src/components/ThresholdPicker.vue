@@ -90,7 +90,7 @@ const refreshThresholds = async () => {
 
 async function thresholdImage(base64, thresholdLow, thresholdHigh) {
   // use endpoint /api/evaluate/single
-  const response = await fetch(process.env.VUE_APP_HOST + '/api/evaluate/single', {
+  const response = await fetch(process.env.VUE_APP_HOST + 'api/evaluate/single', {
     method: 'POST',
     headers: {
       'secret': `${localStorage.getItem('secret')}`,

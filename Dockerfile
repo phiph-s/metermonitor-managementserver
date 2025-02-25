@@ -9,7 +9,7 @@ COPY . /docker-app
 
 # install nodejs
 RUN apt-get update
-RUN apt-get install -y nodejs npm
+RUN apt-get install -y nodejs npm tesseract-ocr
 RUN npm install -g yarn
 
 # Go to frontend and run yarn install

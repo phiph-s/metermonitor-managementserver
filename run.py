@@ -6,7 +6,7 @@ import uvicorn
 
 # check if args --setup is given
 import argparse
-import yaml
+import json
 from fastapi import FastAPI
 
 from lib.http_server import prepare_setup_app
@@ -17,8 +17,8 @@ parser.add_argument("--setup", action="store_true")
 args = parser.parse_args()
 
 # parse config.yaml
-with open('config/config.yml') as file:
-    config = yaml.safe_load(file)
+with open('/data/options.json', 'r') as file:
+    config = json.load(file)
 
     db_connection = sqlite3.connect(config['dbfile'])
     cursor = db_connection.cursor()

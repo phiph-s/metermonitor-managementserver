@@ -125,21 +125,21 @@ function getColor(value) {
 }
 
 const loadMeter = async () => {
-  let response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters/' + id, {
+  let response = await fetch(process.env.VUE_APP_HOST + 'api/watermeters/' + id, {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
   data.value = await response.json();
 
-  response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters/' + id + '/evals', {
+  response = await fetch(process.env.VUE_APP_HOST + 'api/watermeters/' + id + '/evals', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
   evaluations.value = await response.json();
 
-  response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters/' + id + '/history', {
+  response = await fetch(process.env.VUE_APP_HOST + 'api/watermeters/' + id + '/history', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
@@ -192,7 +192,7 @@ const options = {
 };
 
 const resetToSetup = async () => {
-  let response = await fetch(process.env.VUE_APP_HOST + '/api/setup/' + id + '/reset', {
+  let response = await fetch(process.env.VUE_APP_HOST + 'api/setup/' + id + '/reset', {
     method: 'POST',
     headers: {
       'secret': `${localStorage.getItem('secret')}`

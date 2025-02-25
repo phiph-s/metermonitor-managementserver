@@ -55,7 +55,7 @@ const initialValue = ref(0);
 
 const finishSetup = async () => {
   // post to /api/setup/{name}/finish
-  const r = await fetch(process.env.VUE_APP_HOST + '/api/setup/' + props.meterid + '/finish', {
+  const r = await fetch(process.env.VUE_APP_HOST + 'api/setup/' + props.meterid + '/finish', {
     method: 'POST',
     headers: {
       'secret': `${localStorage.getItem('secret')}`,

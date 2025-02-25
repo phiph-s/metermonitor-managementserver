@@ -22,14 +22,14 @@ const waterMeters = ref([]);
 
 // add secret to header of fetch request
 const getData = async () => {
-  let response = await fetch(process.env.VUE_APP_HOST + '/api/discovery', {
+  let response = await fetch(process.env.VUE_APP_HOST + 'api/discovery', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }
   });
   discoveredMeters.value = (await response.json())["watermeters"];
 
-  response = await fetch(process.env.VUE_APP_HOST + '/api/watermeters', {
+  response = await fetch(process.env.VUE_APP_HOST + 'api/watermeters', {
     headers: {
       'secret': `${localStorage.getItem('secret')}`
     }

@@ -9,5 +9,35 @@
   "ingress_port": 8070,
   "ports": {
     "8070/tcp": 8070
+  },
+  "options": {
+    "dbfile": "data/watermeters.db",
+    "secret_key": "debug",
+    "max_history": 500,
+    "max_evals": 200,
+    "allow_negative_correction": true,
+    "publish_to": "homeassistant/sensor/watermeter_{device}/",
+    "mqtt": {
+      "broker": "192.168.178.24",
+      "port": 1883,
+      "topic": "MeterMonitor/#",
+      "username": "esp",
+      "password": "esp"
+    }
+  },
+  "schema": {
+    "dbfile": "str",
+    "secret_key": "str",
+    "max_history": "int(1,)",
+    "max_evals": "int(1,)",
+    "allow_negative_correction": "bool",
+    "publish_to": "str",
+    "mqtt": {
+      "broker": "str",
+      "port": "port",
+      "topic": "str",
+      "username": "str",
+      "password": "str"
+    }
   }
 }
