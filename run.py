@@ -17,7 +17,7 @@ parser.add_argument("--setup", action="store_true")
 args = parser.parse_args()
 
 # parse config.yaml
-with open('config.yml') as file:
+with open('config/config.yml') as file:
     config = yaml.safe_load(file)
 
     db_connection = sqlite3.connect(config['dbfile'])

@@ -63,7 +63,7 @@ def build_message(file_path, picture_number):
         timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(int(timestamp)))
 
     return {
-        "name": "HauptzaehlerStream10",
+        "name": "TesseractHauptzaehlerStream20",
         "picture_number": picture_number,
         "WiFi-RSSI": -57,
         "picture": {

@@ -14,6 +14,16 @@
           {{ (digit[0][1] * 100).toFixed(2) }}
         </span>
       </n-flex>
+      <n-flex justify="space-around" size="large">
+        <span class="prediction" v-for="[i, digit] in JSON.parse(latestEval)[5].entries()" :key="i + 'c'">
+          {{ digit?digit[0]:'' }}
+        </span>
+      </n-flex>
+      <n-flex justify="space-around" size="large">
+        <span class="confidence" v-for="[i, digit] in JSON.parse(latestEval)[5].entries()" :key="i + 'c'" :style="{color: getColor(digit?digit[1]:0)}">
+          {{ digit?digit[1]:'' }}
+        </span>
+      </n-flex>
       <n-divider />
       <n-h3>Manual initial read</n-h3>
       {{new Date(timestamp).toLocaleString()}}<br>

@@ -1,4 +1,7 @@
 <template>
+  <router-link to="/"><n-button quaternary round type="primary" size="large" style="padding: 0; font-size: 16px;">
+   ← Back
+  </n-button></router-link><br><br>
   <n-flex size="large">
     <div  style="max-width: 300px">
       <n-card v-if="data" :title="new Date(data.picture.timestamp).toLocaleString()" size="small">
@@ -22,48 +25,64 @@
         Delete
       </n-button>
     </div>
-    <div style="padding-left: 20px">
-      <n-h2>Details of {{id}}</n-h2>
-      <template v-if="decodedEvals">
-        <template v-for="[i, evalDecoded] in decodedEvals.entries()" :key="i">
-          <n-flex :class="{redbg: evalDecoded[4] == null}">
-            {{new Date(evalDecoded[3]).toLocaleString()}}<br>
-            {{ (evalDecoded[2].reduce((partialSum, a) => partialSum * a[0][1], 1) * 100).toFixed(1) }}%<br>
-            <table>
-              <tr>
-                <td v-for="base64 in evalDecoded[1]" :key="base64">
-                  <img class="digit" :src="'data:image/jpeg;base64,' + base64" alt="Watermeter"/>
-                </td>
-              </tr>
-              <tr>
-                <td v-for="[i, digit] in evalDecoded[2].entries()" :key="i + 'v'" style="text-align: center;">
-                  <span class="prediction" >
-                    {{ (digit[0][0]=='r')? '↕' : digit[0][0] }}
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td v-for="[i, digit] in evalDecoded[2].entries()" :key="i + 'e'" style="text-align: center;">
-                  <span class="confidence" :style="{color: getColor(digit[0][1])}">
-                    {{ Math.round(digit[0][1] * 100) }}
-                  </span>
-                </td>
-              </tr>
-              <tr v-if="evalDecoded[4]">
-                <td v-for="[i, digit] in (evalDecoded[4] + '').padStart(evalDecoded[1].length, '0').split('').entries()" :key="i + 'f'" style="text-align: center;">
-                  <span class="prediction red" v-if="digit !== evalDecoded[2][i][0][0]">
-                    {{ digit }}
-                  </span>
-                </td>
-              </tr>
-            </table>
-          </n-flex>
-          <n-divider/>
-        </template>
+    <div style="padding-left: 20px;">
+      <div style="height: calc(100vh - 120px); overflow: scroll;" class="bglight">
+        <n-h2>Last evaluations of {{id}}</n-h2>
+        <template v-if="decodedEvals">
+      <template v-for="[i, evalDecoded] in decodedEvals.entries()" :key="i">
+        <n-flex :class="{redbg: evalDecoded[4] == null}">
+          {{new Date(evalDecoded[3]).toLocaleString()}}<br>
+          {{ (evalDecoded[2].reduce((partialSum, a) => partialSum * a[0][1], 1) * 100).toFixed(1) }}%<br>
+          <table>
+            <tr>
+              <td v-for="base64 in evalDecoded[1]" :key="base64">
+                <img class="digit" :src="'data:image/jpeg;base64,' + base64" alt="Watermeter"/>
+              </td>
+            </tr>
+            <tr>
+              <td v-for="[i, digit] in evalDecoded[2].entries()" :key="i + 'v'" style="text-align: center;">
+                <span class="prediction" >
+                  {{ (digit[0][0]=='r')? '↕' : digit[0][0] }}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td v-for="[i, digit] in evalDecoded[2].entries()" :key="i + 'e'" style="text-align: center;">
+                <span class="confidence" :style="{color: getColor(digit[0][1])}">
+                  {{ Math.round(digit[0][1] * 100) }}
+                </span>
+              </td>
+            </tr>
+            <tr v-if="evalDecoded[5]">
+              <td v-for="[i, digit] in evalDecoded[5].entries()" :key="i + 'g'" style="text-align: center;">
+                <span class="prediction" v-if="digit !== evalDecoded[2][i][0][0]">
+                  {{ digit?digit[0]:'' }}
+                </span>
+              </td>
+            </tr>
+            <tr v-if="evalDecoded[5]">
+              <td v-for="[i, digit] in evalDecoded[5].entries()" :key="i + 'h'" style="text-align: center;">
+                <span class="confidence" :style="{color: getColor(digit?digit[1]:0)}">
+                  {{ digit?digit[1]:'' }}
+                </span>
+              </td>
+            </tr>
+            <tr v-if="evalDecoded[4]">
+              <td v-for="[i, digit] in (evalDecoded[4] + '').padStart(evalDecoded[1].length, '0').split('').entries()" :key="i + 'f'" style="text-align: center;">
+                <span class="prediction red" v-if="digit !== evalDecoded[2][i][0][0]">
+                  {{ digit }}
+                </span>
+              </td>
+            </tr>
+          </table>
+        </n-flex>
+        <n-divider/>
       </template>
+    </template>
+      </div>
     </div>
     <div>
-      <apex-chart width="500" type="line" :series="series" :options="options"></apex-chart>
+      <apex-chart class="bg" width="500" type="line" :series="series" :options="options"></apex-chart>
     </div>
   </n-flex>
 </template>
@@ -210,5 +229,15 @@ const resetToSetup = async () => {
 .confidence{
   margin: 3px;
   font-size: 12px;
+}
+
+.bg{
+  background-color: rgba(240, 240, 240, 0.8);
+  padding: 20px;
+}
+
+.bglight{
+  background-color: rgba(240, 240, 240, 0.1);
+  padding: 20px;
 }
 </style>

@@ -1,16 +1,11 @@
-import base64
-from io import BytesIO
+import time
 
 import paho.mqtt.client as mqtt
 import json
 import sqlite3
-import os
 from typing import Dict, Any
 
-from PIL import Image
-from ultralytics import settings
-
-from lib.functions import reevaluate_latest_picture
+from lib.functions import reevaluate_latest_picture, publish_registration
 from lib.meter_processing.meter_processing import MeterPredictor
 
 
@@ -20,6 +15,7 @@ class MQTTHandler:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.config = config
         self.forever = forever
+        self.should_reconnect = True
         self.meter_preditor = MeterPredictor(
             yolo_model_path = "models/yolo-best-obb.pt",
             digit_classifier_model_path = "models/digit_classifier.pth"
@@ -32,8 +28,34 @@ class MQTTHandler:
         else:
             print(f"Connection failed with code {reason_code}")
 
+        # send registration message for all watermeters
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM watermeters")
+            rows = cursor.fetchall()
+            for row in rows:
+                publish_registration(self.client, self.config, row[0], "value")
+
     def _on_disconnect(self, client, userdata, rc, properties=None, packet=None, reason=None):
         print(f"Disconnected with code {rc}")
+        if self.should_reconnect:
+            self._reconnect()
+
+    def _reconnect(self):
+        """Attempts to reconnect with exponential backoff"""
+        delay = 1  # Initial delay in seconds
+        max_delay = 60  # Maximum delay to avoid too frequent reconnections
+
+        while self.should_reconnect:
+            try:
+                print(f"Reconnecting to MQTT broker {self.broker}:{self.port}...")
+                self.client.reconnect()
+                print("Reconnected successfully")
+                return  # Exit loop on success
+            except Exception as e:
+                print(f"Reconnect failed: {e}, retrying in {delay} seconds...")
+                time.sleep(delay)
+                delay = min(delay * 2, max_delay)  # Exponential backoff
 
     def _on_message(self, client, userdata, msg):
         data = json.loads(msg.payload)
@@ -100,6 +122,8 @@ class MQTTHandler:
                     False,
                     False
                 ))
+
+                publish_registration(self.client, self.config, data['name'], "value")
             else:
                 cursor.execute('''
                         UPDATE watermeters 
@@ -126,7 +150,7 @@ class MQTTHandler:
                 ))
             conn.commit()
             print(f"MQTT-Handler: Data saved for {data['name']}")
-        reevaluate_latest_picture(self.db_file, data['name'], self.meter_preditor, self.config)
+        reevaluate_latest_picture(self.db_file, data['name'], self.meter_preditor, self.config, publish=True, mqtt_client=self.client)
 
     def start(self,
               broker: str = 'localhost',

@@ -11,7 +11,7 @@ from tensorflow import timestamp
 from lib.history_correction import correct_value
 
 
-def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
+def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, publish: bool = False, mqtt_client = None):
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
 
@@ -43,12 +43,13 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
             print(f"Meter-Eval: No thresholds found for {name}")
         else:
             processed, digits = meter_preditor.apply_thresholds(digits, thresholds, invert=settings[5])
-            prediction = meter_preditor.predict_digits(digits)
+            prediction, tesseract_result = meter_preditor.predict_digits(digits)
 
         value = None
         if setup:
-            value = correct_value(db_file, name, [result, processed, prediction, timestamp])
-            if value is not None:
+            r = correct_value(db_file, name, [result, processed, prediction, timestamp, tesseract_result], allow_negative_correction=config["allow_negative_correction"])
+            if r is not None:
+                value, confidence = r
                 cursor.execute('''
                     INSERT INTO history
                     VALUES (?,?,?,?)
@@ -72,12 +73,15 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
                     )
                 ''', (name, name, config['max_history']))
 
+                if publish and mqtt_client:
+                    publish_value(mqtt_client, config, name, value)
+
         cursor.execute('''
                    INSERT INTO evaluations
                    VALUES (?,?)
                ''', (
             name,
-            json.dumps([result, processed, prediction, timestamp, value])
+            json.dumps([result, processed, prediction, timestamp, value, tesseract_result])
         ))
 
         # remove old evaluations (keep 5)
@@ -94,7 +98,38 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config):
                ''', (name, name, config['max_evals']))
 
         conn.commit()
+
         print(f"Meter-Eval: Prediction saved for {name}")
+
+def publish_value(mqtt_client, config, name, value):
+    # publish to topic
+    topic = config["publish_to"].replace("{device}", name) + "value"
+    dict = {
+        "value": int(value) / 1000.0,
+    }
+    mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
+    print(f"Meter-Eval: Value published for {name} ({value} m³)")
+
+def publish_registration(mqtt_client, config, name, type):
+    # publish to topic
+    topic = config["publish_to"].replace("{device}", name) + "config"
+    dict = {
+      "name": name,
+      "state_topic": config["publish_to"].replace("{device}", name) + type,
+      "unit_of_measurement": "m³",
+      "device_class": "water",
+      "unique_id": "watermeter_" + name,
+      "value_template": "{{ value_json.value }}",
+      "device": {
+        "identifiers": ["watermeter_" + name],
+        "name": name,
+        "manufacturer": "DIY",
+        "model": "WM-1",
+        "sw_version": "1.0"
+      }
+    }
+    mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
+    print(f"Meter-Eval: Registration published for {name}")
 
 def add_history_entry(db_file: str, name: str, value: int, timestamp: str, config, manual: bool = False):
     with sqlite3.connect(db_file) as conn:

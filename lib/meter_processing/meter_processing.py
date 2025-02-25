@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from PIL import Image
 import torch
+from pytesseract import pytesseract, Output
 from ultralytics import YOLO
 from tensorflow.keras.models import load_model
 
@@ -30,7 +31,7 @@ class MeterPredictor:
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Define the model architecture (same as during training)
-        self.digitmodel = load_model('models/th_digit_classifier_large.h5')
+        self.digitmodel = load_model('models/th_digit_classifier_test.h5')
         self.class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'r']
 
     def predict_single_image(self, input_image, segments=7, contrast=1.0, padding=0.0, enhance_sharpness=False, extended_last_digit=False, shrink_last_3=False):
@@ -177,8 +178,48 @@ class MeterPredictor:
         # Apply thresholding to get a binary image.
         digit = cv2.inRange(digit, threshold_low, threshold_high)
 
-        # --- Crop to content with extra vertical padding (10% on top and bottom) ---
-        # Assuming background is white (255) and the content is darker.
+        inverted = cv2.bitwise_not(digit)
+
+        # Find connected components (8-connectivity by default)
+        num_labels, labels = cv2.connectedComponents(inverted)
+
+        # Create a BGR color image with white background
+        color_image = np.full((*digit.shape, 3), (255, 255, 255), dtype=np.uint8)
+
+        # Get the dimensions of the image
+        height, width = digit.shape
+
+        # Calculate the middle 60% region (with 20% padding on all sides)
+        start_x = int(0.4 * width)
+        end_x = int(0.6 * width)
+        start_y = int(0.4 * height)
+        end_y = int(0.6 * height)
+
+        # Assign color based on component's presence in the middle region
+        extracted = 0
+        for label in range(1, num_labels):
+            # Slice the labels to the middle region and check for any occurrence of the current label
+            component_region = labels[start_y:end_y, start_x:end_x]
+            in_middle = np.any(component_region == label)
+
+            if in_middle:
+                color = (0, 0, 0)
+                extracted += 1
+            else:
+                color = (255, 255, 255)
+
+            color_image[labels == label] = color
+        if extracted == 0:
+            # use the whole image
+            color_image = np.full((*digit.shape, 3), (255, 255, 255), dtype=np.uint8)
+            color_image[labels != 0] = (0, 0, 0)
+
+        # back to greyscale
+        color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
+        digit = cv2.resize(color_image, (40, 64))
+
+        #--- Crop to content with extra vertical padding (10% on top and bottom) ---
+        #Assuming background is white (255) and the content is darker.
         coords = np.column_stack(np.where(digit != 255))
         if coords.size > 0:
             # Get the bounding box of non-background pixels.
@@ -225,11 +266,44 @@ class MeterPredictor:
         return img_str, img_norm
 
     def predict_digit(self, digit):
+        # Remove extra dimensions
+        digit_squeezed = np.squeeze(digit)
+
+        # Scale the image values from {0, 1} to {0, 255} and convert to uint8
+        binary_image = (digit_squeezed * 255).astype(np.uint8)
+
+        # PSM 10 is for single character recognition
+        config = '--psm 10 -c tessedit_char_whitelist=0123456789'
+
+        # Use Tesseract to predict the digit as a fallback/alternative
+        # Get TSV output from Tesseract
+        tsv_data = pytesseract.image_to_data(binary_image, config=config, output_type=Output.DICT)
+
+        # Iterate over the returned results to extract text and confidence.
+        recognized_text = ""
+        max_conf = -1
+        for i, text in enumerate(tsv_data['text']):
+            text = text.strip()
+            if text:  # only consider non-empty entries
+                try:
+                    conf = int(tsv_data['conf'][i])
+                except ValueError:
+                    conf = -1
+                if conf > max_conf:
+                    max_conf = conf
+                    recognized_text = text
+
+        # Compose the result from Tesseract with confidence info
+        tesseract_result = None
+        if max_conf >= 90:
+            tesseract_result = recognized_text.strip(), max_conf
+
+        # Perform prediction using your model
         predictions = self.digitmodel.predict(digit)
         top3 = np.argsort(predictions[0])[-3:][::-1]
         pairs = [(self.class_names[i], float(predictions[0][i])) for i in top3]
-        return pairs
 
+        return pairs, tesseract_result
 
     def predict_digits(self, digits):
         """
@@ -239,11 +313,13 @@ class MeterPredictor:
 
         # Predict each digit
         predicted_digits = []
+        tesseract_digits = []
         for i,digit in enumerate(digits):
-            digit = self.predict_digit(digit)
+            digit, tess_digit = self.predict_digit(digit)
             predicted_digits.append(digit)
+            tesseract_digits.append(tess_digit)
 
-        return predicted_digits
+        return predicted_digits, tesseract_digits
 
     def apply_thresholds(self, digits, thresholds, invert=False):
         """

@@ -1,6 +1,6 @@
 <template>
-  <router-link to="/"><n-button quaternary round type="error" size="small" style="padding: 0">
-     Back
+  <router-link to="/"><n-button quaternary round type="primary" size="large" style="padding: 0; font-size: 16px;">
+     ← Back
   </n-button></router-link>
 
   <h2>Setup for {{ id }}</h2>

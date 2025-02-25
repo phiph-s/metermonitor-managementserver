@@ -1,0 +1,12 @@
+dbfile: "data/watermeters.db"
+secret_key: "debug"
+max_history: 500
+max_evals: 200
+allow_negative_correction: true
+publish_to: "homeassistant/sensor/watermeter_{device}/"
+mqtt:
+  broker: "192.168.178.24"
+  port: 1883
+  topic: "MeterMonitor/#"
+  username: "esp"
+  password: "esp"
