@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "master" ]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: phiph-s/metermonitor-managementserver
+
 jobs:
 
   build:
@@ -49,7 +53,7 @@ jobs:
             push: true
             tags: |
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.extract_info.outputs.version }}          
+              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.extract_info.outputs.version }} 
             labels: |
               org.opencontainers.image.title="Meter Monitor"
               org.opencontainers.image.description="Integrate ESP32 based meter monitor cams with Home Assistant using AI"
