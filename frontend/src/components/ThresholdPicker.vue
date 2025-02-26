@@ -1,26 +1,38 @@
 <template>
   <n-card>
-    <n-flex justify="space-around" size="large" v-if="encoded">
-      <img class="digit" v-for="[i,base64] in JSON.parse(encoded)[0].entries()" :src="'data:image/jpeg;base64,' + base64" :key="i+'a'" alt="D" style="max-width: 40px"/>
-    </n-flex>
-    <n-flex justify="space-around" size="large" v-if="tresholdedImages">
-      <img class="digit" v-for="[i,base64] in tresholdedImages.entries()" :src="'data:image/jpeg;base64,' + base64" :key="i+'b'" alt="Watermeter"/>
-    </n-flex>
+    <n-flex>
+      <div>
+        <n-flex justify="space-around" size="large" v-if="encoded">
+          <img class="digit" v-for="[i,base64] in JSON.parse(encoded)[0].slice(0,-3).entries()" :src="'data:image/png;base64,' + base64" :key="i+'a'" alt="D" style="max-width: 40px"/>
+        </n-flex>
+        <n-flex justify="space-around" size="large" v-if="tresholdedImages">
+          <img class="digit" v-for="[i,base64] in tresholdedImages.slice(0,-3).entries()" :src="'data:image/png;base64,' + base64" :key="i+'b'" alt="Watermeter"/>
+        </n-flex>
 
-    <n-divider dashed></n-divider>
+        <n-divider dashed></n-divider>
+        Thresholds
+        <n-slider v-model:value="nthreshold" range :step="1" :max="255" @mouseup="sendUpdate" style="max-width: 150px;"/>
+      </div>
+      <div>
+        <n-flex justify="space-around" size="large" v-if="encoded">
+          <img class="digit" v-for="[i,base64] in JSON.parse(encoded)[0].slice(-3).entries()" :src="'data:image/png;base64,' + base64" :key="i+'a'" alt="D" style="max-width: 40px"/>
+        </n-flex>
+        <n-flex justify="space-around" size="large" v-if="tresholdedImages">
+          <img class="digit" v-for="[i,base64] in tresholdedImages.slice(-3).entries()" :src="'data:image/png;base64,' + base64" :key="i+'b'" alt="Watermeter"/>
+        </n-flex>
 
-    <label>
-      <input type="range" v-model="nthreshold_low" min="0" max="255" @mouseup="sendUpdate" />
-      Low Threshold {{nthreshold_low}}
-    </label><br>
-    <label>
-      <input type="range" v-model="nthreshold_high" min="0" max="255" @mouseup="sendUpdate" />
-      High Threshold {{nthreshold_high}}
-    </label><br>
+        <n-divider dashed></n-divider>
+        Thresholds (last 3)
+        <n-slider v-model:value="nthreshold_last" range :step="1" :max="255" @mouseup="sendUpdate" style="max-width: 150px;"/>
+      </div>
+    </n-flex>
+    <n-divider></n-divider>
     <label>
       <input type="checkbox" v-model="ninvert"/>
       Invert colors
-    </label>
+    </label><br><br>
+    Extraction padding
+      <n-slider v-model:value="islanding_padding" :step="1" :max="100" @mouseup="sendUpdate" style="max-width: 150px;"/>
     <template #action>
       <n-flex justify="end" size="large">
         <n-button
@@ -33,38 +45,48 @@
 </template>
 
 <script setup>
-import {NFlex, NCard, NDivider, NButton} from "naive-ui";
+import {NFlex, NCard, NDivider, NButton, NSlider} from "naive-ui";
 import {defineProps, defineEmits, ref, watch} from 'vue';
 
 const props = defineProps([
     'encoded',
-    'threshold_low',
-    'threshold_high',
+    'threshold',
+    'threshold_last',
+    'islanding_padding',
     'invert'
 ]);
 
 const emits = defineEmits(['update', 'reevaluate']);
 
-const nthreshold_low = ref(props.threshold_low);
-const nthreshold_high = ref(props.threshold_high);
+const nthreshold = ref(props.threshold);
+const nthreshold_last = ref(props.threshold_last);
+const islanding_padding = ref(props.islanding_padding);
+
 const ninvert = ref(props.invert);
 const tresholdedImages = ref([]);
 const refreshing = ref(false);
 
-watch(() => props.threshold_low, (newVal) => {
-  nthreshold_low.value = newVal;
+
+
+watch(() => props.threshold, (newVal) => {
+  nthreshold.value = newVal;
 });
-watch(() => props.threshold_high, (newVal) => {
-  nthreshold_high.value = newVal;
+watch(() => props.threshold_last, (newVal) => {
+  nthreshold_last.value = newVal;
 });
+watch(() => props.islanding_padding, (newVal) => {
+  islanding_padding.value = newVal;
+});
+
 watch(() => props.invert, (newVal) => {
   ninvert.value = newVal;
 });
 
 const sendUpdate = () => {
   emits('update', {
-    threshold_low: nthreshold_low.value,
-    threshold_high: nthreshold_high.value,
+    threshold: nthreshold.value,
+    threshold_last: nthreshold_last.value,
+    islanding_padding: islanding_padding.value,
     invert: ninvert.value
   });
   refreshThresholds();
@@ -81,14 +103,15 @@ const refreshThresholds = async () => {
   let narray = [];
   const base64s = JSON.parse(props.encoded)[0];
   for (let j = 0; j < base64s.length; j++) {
-    const newBase64 = await thresholdImage(base64s[j], nthreshold_low.value, nthreshold_high.value);
+    let isLast3 = j >= base64s.length - 3;
+    const newBase64 = await thresholdImage(base64s[j], isLast3? nthreshold_last.value : nthreshold.value, islanding_padding.value);
     narray.push(newBase64);
   }
   tresholdedImages.value = narray;
   refreshing.value = false;
 }
 
-async function thresholdImage(base64, thresholdLow, thresholdHigh) {
+async function thresholdImage(base64, threshold, islanding_padding = 0) {
   // use endpoint /api/evaluate/single
   const response = await fetch(process.env.VUE_APP_HOST + 'api/evaluate/single', {
     method: 'POST',
@@ -98,8 +121,9 @@ async function thresholdImage(base64, thresholdLow, thresholdHigh) {
     },
     body: JSON.stringify({
       base64str: base64,
-      threshold_low: thresholdLow,
-      threshold_high: thresholdHigh,
+      threshold_low: threshold[0],
+      threshold_high: threshold[1],
+      islanding_padding: islanding_padding,
       invert: ninvert.value
     })
   });

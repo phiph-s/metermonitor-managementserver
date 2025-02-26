@@ -5,6 +5,7 @@ import json
 import base64
 from PIL import Image
 import paho.mqtt.client as mqtt
+import numpy as np
 
 # MQTT Configuration
 MQTT_BROKER = "192.168.178.24"  # Change this to your MQTT broker
@@ -16,17 +17,14 @@ MQTT_TOPIC = "MeterMonitor/upload"
 # Image Filename Patterns
 ISO_TIMESTAMP_REGEX = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"  # Matches "2024-11-02T18:54:48"
 UNIX_TIMESTAMP_REGEX = r"^pic_\d{10}"  # Matches "pic_1737507953" (10-digit Unix timestamp)
+MAX_IMAGES = 200  # Maximum number of images to send
 
 
 def get_image_files():
     """List image files in the current directory that match timestamp patterns."""
     files = os.listdir(".")
-    image_files = []
-
-    for file in files:
-        if re.match(ISO_TIMESTAMP_REGEX, file) or re.match(UNIX_TIMESTAMP_REGEX, file):
-            image_files.append(file)
-
+    image_files = [file for file in files if
+                   re.match(ISO_TIMESTAMP_REGEX, file) or re.match(UNIX_TIMESTAMP_REGEX, file)]
     return sorted(image_files)  # Sort to ensure correct order
 
 
@@ -58,12 +56,12 @@ def build_message(file_path, picture_number):
     encoded_data, length = encode_image_to_base64(file_path)
     width, height = get_image_dimensions(file_path)
 
-    # if timestamp isnt iso format, convert it
+    # If timestamp isn't in ISO format, convert it
     if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", timestamp):
         timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(int(timestamp)))
 
     return {
-        "name": "TesseractHauptzaehlerStream21",
+        "name": "TesseractWerntgesStream1",
         "picture_number": picture_number,
         "WiFi-RSSI": -57,
         "picture": {
@@ -84,27 +82,31 @@ def main():
         print("No images matching the pattern were found.")
         return
 
+    total_images = len(images)
+    print(f"Found {total_images} images.")
+
+    if total_images > MAX_IMAGES:
+        indices = np.linspace(0, total_images - 1, MAX_IMAGES, dtype=int)  # Select evenly spaced images
+        images = [images[i] for i in indices]
+        print(f"Selecting {MAX_IMAGES} evenly spaced images from {total_images}.")
+
     # Set up MQTT client with authentication
     client = mqtt.Client()
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)  # Set MQTT credentials
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
 
-    print(f"Found {len(images)} images. Sending the first image immediately...")
-
-    # Send the first image
+    print(f"Sending first image immediately: {images[0]}")
     msg = build_message(images[0], picture_number=1)
     client.publish(MQTT_TOPIC, json.dumps(msg))
-    print(f"Sent image: {images[0]}")
+    print(f"Sent image 1: {images[0]}")
 
-    # Wait for user input before sending the rest
     input("Press Enter to send the remaining images...")
 
-    # Send remaining images with a 1-second delay
     for idx, image_file in enumerate(images[1:], start=2):
         time.sleep(0.5)
         msg = build_message(image_file, picture_number=idx)
         client.publish(MQTT_TOPIC, json.dumps(msg))
-        print(f"Sent image: {image_file}")
+        print(f"Sent image {idx}/{len(images)}: {image_file}")
 
     print("All images have been sent.")
 

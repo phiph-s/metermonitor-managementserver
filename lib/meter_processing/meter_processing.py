@@ -118,6 +118,7 @@ class MeterPredictor:
             rotated_cropped_img_ext = cv2.warpPerspective(img, M, (max_width, int(max_height * 1.2)))
 
         # 7. Split the cropped meter into segments vertical parts for classification
+        if (segments == 0): return [],[]
         part_width = rotated_cropped_img.shape[1] // segments
 
         base64s = []
@@ -159,7 +160,7 @@ class MeterPredictor:
             pil_img = Image.fromarray(part)
 
             buffered = BytesIO()
-            pil_img.save(buffered, format="JPEG")
+            pil_img.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue())
             # to string
             img_str = img_str.decode('utf-8')
@@ -168,9 +169,15 @@ class MeterPredictor:
 
         return base64s, digits
 
-    def apply_threshold(self, digit, threshold_low, threshold_high, invert=False):
+    def apply_threshold(self, digit, threshold_low, threshold_high, islanding_padding=40, invert=False):
         if invert:
             digit = cv2.bitwise_not(digit)
+
+        threshold_low, threshold_high = int(threshold_low), int(threshold_high)
+        islanding_padding = int(islanding_padding)
+
+        print(f"Thresholds: {threshold_low}, {threshold_high}")
+        print(f"Islanding padding: {islanding_padding}")
 
         # Convert the digit image to grayscale.
         digit = cv2.cvtColor(digit, cv2.COLOR_BGR2GRAY)
@@ -190,13 +197,14 @@ class MeterPredictor:
         height, width = digit.shape
 
         # Calculate the middle 60% region (with 20% padding on all sides)
-        start_x = int(0.4 * width)
-        end_x = int(0.6 * width)
-        start_y = int(0.4 * height)
-        end_y = int(0.6 * height)
+        start_x = int((islanding_padding / 100.0) * width)
+        end_x = int(1.0 - (islanding_padding / 100.0)  * width)
+        start_y = int((islanding_padding / 100.0) * height)
+        end_y = int(1.0 - (islanding_padding / 100.0) * height)
 
         # Assign color based on component's presence in the middle region
         extracted = 0
+        extracted_percentage = 0
         for label in range(1, num_labels):
             # Slice the labels to the middle region and check for any occurrence of the current label
             component_region = labels[start_y:end_y, start_x:end_x]
@@ -205,11 +213,16 @@ class MeterPredictor:
             if in_middle:
                 color = (0, 0, 0)
                 extracted += 1
+
+                # Calculate the percentage of the component in the middle region
+                component_area = np.sum(labels == label)
+                total_area = height * width
+                extracted_percentage += component_area / total_area * 100
             else:
                 color = (255, 255, 255)
 
             color_image[labels == label] = color
-        if extracted == 0:
+        if (extracted == 0 or extracted_percentage < 10):
             # use the whole image
             color_image = np.full((*digit.shape, 3), (255, 255, 255), dtype=np.uint8)
             color_image[labels != 0] = (0, 0, 0)
@@ -257,10 +270,11 @@ class MeterPredictor:
         img_norm = np.expand_dims(img_norm, axis=-1)  # add channel dimension
         img_norm = np.expand_dims(img_norm, axis=0)  # add batch dimension
 
-        # --- Encode image to base64 ---
-        pil_img = Image.fromarray(digit_padded)
+        img_uint8 = (img_norm.squeeze() * 255).astype(np.uint8)  # Remove extra dims & convert to uint8
+        pil_img = Image.fromarray(img_uint8)
+        # Encode image to Base64
         buffered = BytesIO()
-        pil_img.save(buffered, format="JPEG")
+        pil_img.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
         return img_str, img_norm
@@ -321,7 +335,7 @@ class MeterPredictor:
 
         return predicted_digits, tesseract_digits
 
-    def apply_thresholds(self, digits, thresholds, invert=False):
+    def apply_thresholds(self, digits, thresholds, thresholds_last, islanding_padding, invert=False):
         """
         Digits are np arrays
         apply black/white thresholding to each digit
@@ -334,7 +348,10 @@ class MeterPredictor:
         threshold_low = thresholds[0]
         threshold_high = thresholds[1]
         for i, digit in enumerate(digits):
-            img_str, digit = self.apply_threshold(digit, threshold_low, threshold_high, invert)
+            if i >= len(digits) - 3:
+                threshold_low = thresholds_last[0]
+                threshold_high = thresholds_last[1]
+            img_str, digit = self.apply_threshold(digit, threshold_low, threshold_high, islanding_padding, invert)
 
             thresholded_digits.append(digit)
             base64s.append(img_str)

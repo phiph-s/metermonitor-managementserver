@@ -18,7 +18,7 @@
     </label>
     <template #action v-if="nencodedLatest">
       <n-flex justify="space-around" size="large">
-        <img class="digit" v-for="base64 in JSON.parse(nencodedLatest)[0]" :src="'data:image/jpeg;base64,' + base64" :key="base64" alt="D" style="max-width: 40px"/>
+        <img class="digit" v-for="base64 in JSON.parse(nencodedLatest)[0]" :src="'data:image/png;base64,' + base64" :key="base64" alt="D" style="max-width: 40px"/>
       </n-flex>
     </template>
   </n-card>

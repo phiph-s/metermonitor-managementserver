@@ -27,22 +27,29 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         setup = row[2] == 1
 
         cursor.execute('''
-                   SELECT threshold_low, threshold_high, segments, shrink_last_3, extended_last_digit, invert
+                   SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
+                    segments, shrink_last_3, extended_last_digit, invert
                    FROM settings
                    WHERE name = ?
                ''', (name,))
         settings = cursor.fetchone()
         thresholds = [settings[0], settings[1]]
+        thresholds_last = [settings[2], settings[3]]
+        islanding_padding = settings[4]
+        segments = settings[5]
+        shrink_last_3 = settings[6]
+        extended_last_digit = settings[7]
+        invert = settings[8]
 
         image = Image.open(BytesIO(image_data))
-        result, digits = meter_preditor.predict_single_image(image, segments=settings[2], shrink_last_3=settings[3],
-                                                                  extended_last_digit=settings[4])
+        result, digits = meter_preditor.predict_single_image(image, segments=segments, shrink_last_3=shrink_last_3,
+                                                                  extended_last_digit=extended_last_digit)
         processed = []
         prediction = []
         if len(thresholds) == 0:
             print(f"Meter-Eval: No thresholds found for {name}")
         else:
-            processed, digits = meter_preditor.apply_thresholds(digits, thresholds, invert=settings[5])
+            processed, digits = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding, invert=invert)
             prediction, tesseract_result = meter_preditor.predict_digits(digits)
 
         value = None

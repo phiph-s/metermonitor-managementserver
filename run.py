@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 from contextlib import asynccontextmanager
@@ -17,7 +18,10 @@ parser.add_argument("--setup", action="store_true")
 args = parser.parse_args()
 
 # parse config.yaml
-with open('/data/options.json', 'r') as file:
+path = '/data/options.json'
+if not os.path.exists(path):
+    path = 'data/options.json'
+with open(path, 'r') as file:
     config = json.load(file)
 
     db_connection = sqlite3.connect(config['dbfile'])
@@ -41,6 +45,9 @@ with open('/data/options.json', 'r') as file:
                     name TEXT PRIMARY KEY,
                     threshold_low INTEGER,
                     threshold_high INTEGER,
+                    threshold_last_low INTEGER,
+                    threshold_last_high INTEGER,
+                    islanding_padding INTEGER,
                     segments INTEGER,
                     shrink_last_3 BOOLEAN,
                     extended_last_digit BOOLEAN,

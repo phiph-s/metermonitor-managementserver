@@ -24,8 +24,9 @@
           :encoded="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null"
           :run="tresholdedImages[tresholdedImages.length-1]"
           :invert="invert"
-          :threshold_low="threshold_low"
-          :threshold_high="threshold_high"
+          :threshold="threshold"
+          :threshold_last="threshold_last"
+          :islanding_padding="islanding_padding"
           @update="updateThresholds"
           @reevaluate="reevaluate"
       />
@@ -102,8 +103,10 @@ const id = route.params.id;
 const lastPicture = ref("");
 const evaluations = ref("");
 
-const threshold_low = ref(0);
-const threshold_high = ref(0);
+const threshold = ref([0, 100]);
+const threshold_last = ref([0, 100]);
+const islanding_padding = ref(0);
+
 const tresholdedImages = ref([]);
 
 const segments = ref(0);
@@ -134,8 +137,10 @@ const getData = async () => {
 
   let result = await response.json();
 
-  threshold_low.value = result.threshold_low + "";
-  threshold_high.value = result.threshold_high + "";
+  threshold.value = [result.threshold_low, result.threshold_high];
+  threshold_last.value = [result.threshold_last_low, result.threshold_last_high];
+  islanding_padding.value = result.islanding_padding;
+
   segments.value = result.segments;
   extendedLastDigit.value = result.extended_last_digit === 1;
   last3DigitsNarrow.value = result.shrink_last_3 === 1;
@@ -152,8 +157,9 @@ onMounted(() => {
 });
 
 const updateThresholds = async (data) => {
-  threshold_low.value = data.threshold_low;
-  threshold_high.value = data.threshold_high;
+  threshold.value = data.threshold;
+  threshold_last.value = data.threshold_last;
+  islanding_padding.value = data.islanding_padding;
   invert.value = data.invert;
 
   updateSettings();
@@ -181,8 +187,11 @@ const updateSettings = async () => {
 
   const settings = {
     name: id,
-    threshold_low: threshold_low.value,
-    threshold_high: threshold_high.value,
+    threshold_low: threshold.value[0],
+    threshold_high: threshold.value[1],
+    threshold_last_low: threshold_last.value[0],
+    threshold_last_high: threshold_last.value[1],
+    islanding_padding: islanding_padding.value,
     segments: segments.value,
     extended_last_digit: extendedLastDigit.value,
     shrink_last_3: last3DigitsNarrow.value,

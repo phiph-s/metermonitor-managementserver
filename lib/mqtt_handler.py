@@ -112,11 +112,14 @@ class MQTTHandler:
                 ))
                 cursor.execute('''
                                 INSERT OR IGNORE INTO settings
-                                VALUES (?,?,?,?,?,?,?)
+                                VALUES (?,?,?,?,?,?,?,?,?,?)
                             ''', (
                     data['name'],
                     0,
                     100,
+                    0,
+                    100,
+                    20,
                     7,
                     False,
                     False,

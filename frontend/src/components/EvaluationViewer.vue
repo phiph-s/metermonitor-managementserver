@@ -2,7 +2,7 @@
   <template v-if="latestEval">
     <n-card>
       <n-flex justify="space-around" size="large">
-        <img class="digit" v-for="[i,base64] in JSON.parse(latestEval)[1].entries()" :key="i + 'c'" :src="'data:image/jpeg;base64,' + base64" alt="D"/>
+        <img class="digit" v-for="[i,base64] in JSON.parse(latestEval)[1].entries()" :key="i + 'c'" :src="'data:image/png;base64,' + base64" alt="D"/>
       </n-flex>
       <n-flex justify="space-around" size="large">
         <span class="prediction" v-for="[i, digit] in JSON.parse(latestEval)[2].entries()" :key="i + 'd'">

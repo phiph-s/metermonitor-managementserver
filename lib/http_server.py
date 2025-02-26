@@ -74,6 +74,9 @@ def prepare_setup_app(config, lifespan):
         name: str
         threshold_low: int
         threshold_high: int
+        threshold_last_low: int
+        threshold_last_high: int
+        islanding_padding: int
         segments: int
         shrink_last_3: bool
         extended_last_digit: bool
@@ -97,6 +100,7 @@ def prepare_setup_app(config, lifespan):
             base64str: str = Body(...),  # Changed from Query to Body for POST requests
             threshold_low: float = Body(0, ge=0, le=255),
             threshold_high: float = Body(155, ge=0, le=255),
+            islanding_padding: int = Body(20, ge=0),
             invert: bool = Body(False)
     ):
             # Decode the base64 image
@@ -108,7 +112,7 @@ def prepare_setup_app(config, lifespan):
             image = np.array(image)
 
             # Apply threshold with the passed values
-            base64r, digits = meter_preditor.apply_threshold(image, threshold_low, threshold_high, invert = invert)
+            base64r, digits = meter_preditor.apply_threshold(image, threshold_low, threshold_high, islanding_padding,  invert = invert)
 
             # Return the result
             return {"base64": base64r}
@@ -167,6 +171,17 @@ def prepare_setup_app(config, lifespan):
             }
         }
 
+    @app.delete("/api/watermeters/{name}", dependencies=[Depends(authenticate)])
+    def delete_watermeter(name: str):
+        db = db_connection()
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM watermeters WHERE name = ?", (name,))
+        cursor.execute("DELETE FROM evaluations WHERE name = ?", (name,))
+        cursor.execute("DELETE FROM history WHERE name = ?", (name,))
+        cursor.execute("DELETE FROM settings WHERE name = ?", (name,))
+        db.commit()
+        return {"message": "Watermeter deleted", "name": name}
+
     @app.post("/api/setup", dependencies=[Depends(authenticate)])
     def setup_watermeter(config: ConfigRequest):
         db = db_connection()
@@ -195,17 +210,20 @@ def prepare_setup_app(config, lifespan):
     @app.get("/api/settings/{name}", dependencies=[Depends(authenticate)])
     def get_settings(name: str):
         cursor = db_connection().cursor()
-        cursor.execute("SELECT threshold_low, threshold_high, segments, shrink_last_3, extended_last_digit, invert FROM settings WHERE name = ?", (name,))
+        cursor.execute("SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, invert FROM settings WHERE name = ?", (name,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Thresholds not found")
         return {
             "threshold_low": row[0],
             "threshold_high": row[1],
-            "segments": row[2],
-            "shrink_last_3": row[3],
-            "extended_last_digit": row[4],
-            "invert": row[5]
+            "threshold_last_low": row[2],
+            "threshold_last_high": row[3],
+            "islanding_padding": row[4],
+            "segments": row[5],
+            "shrink_last_3": row[6],
+            "extended_last_digit": row[7],
+            "invert": row[8]
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
@@ -214,12 +232,13 @@ def prepare_setup_app(config, lifespan):
         cursor = db.cursor()
         cursor.execute(
             """
-            INSERT INTO settings (name, threshold_low, threshold_high, segments, shrink_last_3, extended_last_digit, invert) 
-            VALUES (?, ?, ?, ?, ? , ?, ?) ON CONFLICT(name) DO UPDATE SET 
-            threshold_low=excluded.threshold_low, threshold_high=excluded.threshold_high,
+            INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, invert) 
+            VALUES (?, ?, ?, ?,?,?, ?, ? , ?, ?) ON CONFLICT(name) DO UPDATE SET 
+            threshold_low=excluded.threshold_low, threshold_high=excluded.threshold_high, threshold_last_low=excluded.threshold_last_low, threshold_last_high=excluded.threshold_last_high,
+            islanding_padding=excluded.islanding_padding,
             segments=excluded.segments, shrink_last_3=excluded.shrink_last_3, extended_last_digit=excluded.extended_last_digit, invert=excluded.invert
             """,
-            (settings.name, settings.threshold_low, settings.threshold_high,
+            (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low, settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.invert)
         )
         db.commit()

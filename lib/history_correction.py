@@ -34,6 +34,7 @@ def correct_value(db_file:str, name: str, new_eval, max_flow = 0.7, allow_negati
 
         correctedValue = ""
         totalConfidence = 1.0
+        negative_corrected = False
         for i, lastChar in enumerate(last_value):
 
             if new_tesseract_results[i]:
@@ -51,11 +52,9 @@ def correct_value(db_file:str, name: str, new_eval, max_flow = 0.7, allow_negati
                 tempConfidence = totalConfidence
                 if prediction[0] == 'r':
                     # check if the digit before has changed upwards, set the digit to 0
-                    if correctedValue[-1] != last_value[i]:
-                        print(correctedValue[-1], "!=", last_value[i])
+                    if len(correctedValue) > 1 and correctedValue[-1] != last_value[i-1]:
                         tempValue += '0'
                         tempConfidence *= prediction[1]
-                        print("0 rotation filled")
                     else:
                         tempValue += lastChar
                         tempConfidence *= prediction[1]
@@ -63,7 +62,7 @@ def correct_value(db_file:str, name: str, new_eval, max_flow = 0.7, allow_negati
                     tempValue += prediction[0]
                     tempConfidence *= prediction[1]
 
-                if int(tempValue) >= int(last_value[:i+1]):
+                if int(tempValue) >= int(last_value[:i+1]) or negative_corrected:
                     correctedValue = tempValue
                     totalConfidence = tempConfidence
                     digit_appended = True
@@ -74,6 +73,7 @@ def correct_value(db_file:str, name: str, new_eval, max_flow = 0.7, allow_negati
                         correctedValue = correctedValue + new_tesseract_results[i][0]
                         totalConfidence = totalConfidence * new_tesseract_results[i][1] / 100.0
                         digit_appended = True
+                        negative_corrected = True
                         print("Negative correction accepted")
                         break
 

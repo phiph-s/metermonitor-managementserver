@@ -6,7 +6,7 @@
     <div  style="max-width: 300px">
       <n-card v-if="data" :title="new Date(data.picture.timestamp).toLocaleString()" size="small">
         <template #cover>
-          <img :src="'data:image/jpeg;base64,' + data.picture.data" alt="Watermeter"/>
+          <img :src="'data:image/'+data.picture.format+';base64,' + data.picture.data" alt="Watermeter"/>
         </template>
       </n-card>
       <n-divider/>
@@ -21,9 +21,16 @@
         This will reset the history of this meter and enable setup mode. Are you sure?
       </n-popconfirm>
 
-      <n-button type="error" style="width: 100%;margin-top: 5px">
-        Delete
-      </n-button>
+      <n-popconfirm
+        @positive-click="deleteMeter"
+      >
+        <template #trigger>
+          <n-button type="error" style="width: 100%;margin-top: 5px">
+            Delete
+          </n-button>
+        </template>
+        This will delete the meter with all its settings and data. Are you sure?
+      </n-popconfirm>
     </div>
     <div style="padding-left: 20px;">
       <div style="height: calc(100vh - 120px); overflow: scroll;" class="bglight">
@@ -36,7 +43,7 @@
           <table>
             <tr>
               <td v-for="base64 in evalDecoded[1]" :key="base64">
-                <img class="digit" :src="'data:image/jpeg;base64,' + base64" alt="Watermeter"/>
+                <img class="digit" :src="'data:image/png;base64,' + base64" alt="Watermeter"/>
               </td>
             </tr>
             <tr>
@@ -190,6 +197,21 @@ const options = {
     }
   }
 };
+
+const deleteMeter = async () => {
+  let response = await fetch(process.env.VUE_APP_HOST + 'api/watermeters/' + id, {
+    method: 'DELETE',
+    headers: {
+      'secret': `${localStorage.getItem('secret')}`
+    }
+  });
+
+  if (response.status === 200) {
+    router.replace({path: '/'});
+  } else {
+    console.log('Error deleting meter');
+  }
+}
 
 const resetToSetup = async () => {
   let response = await fetch(process.env.VUE_APP_HOST + 'api/setup/' + id + '/reset', {
