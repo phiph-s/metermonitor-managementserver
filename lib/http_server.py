@@ -36,7 +36,7 @@ def prepare_setup_app(config, lifespan):
     db_connection = lambda: sqlite3.connect(config['dbfile'])
 
     meter_preditor = MeterPredictor(
-        yolo_model_path="models/yolo-best-obb.pt",
+        yolo_model_path="models/yolo-best-obb-2.pt",
         digit_classifier_model_path="models/digit_classifier.pth"
     )
     print("HTTP-Server: Loaded HTTP meter predictor.")
@@ -78,6 +78,7 @@ def prepare_setup_app(config, lifespan):
         threshold_last_high: int
         islanding_padding: int
         segments: int
+        rotated_180: bool
         shrink_last_3: bool
         extended_last_digit: bool
         invert: bool
@@ -129,7 +130,8 @@ def prepare_setup_app(config, lifespan):
         cursor = db.cursor()
         cursor.execute("UPDATE watermeters SET setup = 1 WHERE name = ?", (name,))
         db.commit()
-        add_history_entry(config['dbfile'], name, data.value, data.timestamp, config, manual=True)
+        target_brightness, confidence = reevaluate_latest_picture(config['dbfile'], name, meter_preditor, config)
+        add_history_entry(config['dbfile'], name, data.value, confidence, target_brightness, data.timestamp, config, manual=True)
         return {"message": "Setup completed"}
 
     @app.post("/api/setup/{name}/reset", dependencies=[Depends(authenticate)])
@@ -147,7 +149,7 @@ def prepare_setup_app(config, lifespan):
     @app.get("/api/watermeters/{name}/history", dependencies=[Depends(authenticate)])
     def get_watermeter(name: str):
         cursor = db_connection().cursor()
-        cursor.execute("SELECT value, timestamp, manual FROM history WHERE name = ?", (name,))
+        cursor.execute("SELECT value, timestamp, confidence, manual FROM history WHERE name = ?", (name,))
         return {"history": [row for row in cursor.fetchall()]}
 
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])
@@ -210,7 +212,7 @@ def prepare_setup_app(config, lifespan):
     @app.get("/api/settings/{name}", dependencies=[Depends(authenticate)])
     def get_settings(name: str):
         cursor = db_connection().cursor()
-        cursor.execute("SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, invert FROM settings WHERE name = ?", (name,))
+        cursor.execute("SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, invert, rotated_180 FROM settings WHERE name = ?", (name,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Thresholds not found")
@@ -223,7 +225,8 @@ def prepare_setup_app(config, lifespan):
             "segments": row[5],
             "shrink_last_3": row[6],
             "extended_last_digit": row[7],
-            "invert": row[8]
+            "invert": row[8],
+            "rotated_180": row[9]
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
@@ -232,14 +235,14 @@ def prepare_setup_app(config, lifespan):
         cursor = db.cursor()
         cursor.execute(
             """
-            INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, invert) 
-            VALUES (?, ?, ?, ?,?,?, ?, ? , ?, ?) ON CONFLICT(name) DO UPDATE SET 
+            INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, invert, rotated_180) 
+            VALUES (?, ?, ?, ?,?,?, ?, ? , ?, ?, ?) ON CONFLICT(name) DO UPDATE SET 
             threshold_low=excluded.threshold_low, threshold_high=excluded.threshold_high, threshold_last_low=excluded.threshold_last_low, threshold_last_high=excluded.threshold_last_high,
             islanding_padding=excluded.islanding_padding,
-            segments=excluded.segments, shrink_last_3=excluded.shrink_last_3, extended_last_digit=excluded.extended_last_digit, invert=excluded.invert
+            segments=excluded.segments, shrink_last_3=excluded.shrink_last_3, extended_last_digit=excluded.extended_last_digit, invert=excluded.invert, rotated_180=excluded.rotated_180
             """,
             (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low, settings.threshold_last_high, settings.islanding_padding,
-             settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.invert)
+             settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.invert, settings.rotated_180)
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}

@@ -17,7 +17,7 @@ class MQTTHandler:
         self.forever = forever
         self.should_reconnect = True
         self.meter_preditor = MeterPredictor(
-            yolo_model_path = "models/yolo-best-obb.pt",
+            yolo_model_path = "models/yolo-best-obb-2.pt",
             digit_classifier_model_path = "models/digit_classifier.pth"
         )
         print("MQTT-Handler: Loaded MQTT meter predictor.")
@@ -112,7 +112,7 @@ class MQTTHandler:
                 ))
                 cursor.execute('''
                                 INSERT OR IGNORE INTO settings
-                                VALUES (?,?,?,?,?,?,?,?,?,?)
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?)
                             ''', (
                     data['name'],
                     0,
@@ -121,6 +121,7 @@ class MQTTHandler:
                     100,
                     20,
                     7,
+                    False,
                     False,
                     False,
                     False

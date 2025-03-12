@@ -28,7 +28,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
 
         cursor.execute('''
                    SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
-                    segments, shrink_last_3, extended_last_digit, invert
+                    segments, shrink_last_3, extended_last_digit, invert, rotated_180
                    FROM settings
                    WHERE name = ?
                ''', (name,))
@@ -40,10 +40,18 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         shrink_last_3 = settings[6]
         extended_last_digit = settings[7]
         invert = settings[8]
+        rotated_180 = settings[9]
+
+        cursor.execute("SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
+        row = cursor.fetchone()
+        target_brightness = None
+        if row:
+            target_brightness = row[0]
+        conn.commit()
 
         image = Image.open(BytesIO(image_data))
-        result, digits = meter_preditor.predict_single_image(image, segments=segments, shrink_last_3=shrink_last_3,
-                                                                  extended_last_digit=extended_last_digit)
+        result, digits, target_brightness = meter_preditor.predict_single_image(image, segments=segments, shrink_last_3=shrink_last_3,
+                                                                  extended_last_digit=extended_last_digit, rotated_180=rotated_180, target_brightness=target_brightness)
         processed = []
         prediction = []
         if len(thresholds) == 0:
@@ -53,16 +61,19 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             prediction, tesseract_result = meter_preditor.predict_digits(digits)
 
         value = None
+        confidence = 0
         if setup:
             r = correct_value(db_file, name, [result, processed, prediction, timestamp, tesseract_result], allow_negative_correction=config["allow_negative_correction"])
             if r is not None:
                 value, confidence = r
                 cursor.execute('''
                     INSERT INTO history
-                    VALUES (?,?,?,?)
+                    VALUES (?,?,?,?,?,?)
                 ''', (
                     name,
                     value,
+                    confidence,
+                    target_brightness,
                     timestamp,
                     False
                 ))
@@ -88,7 +99,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
                    VALUES (?,?)
                ''', (
             name,
-            json.dumps([result, processed, prediction, timestamp, value, tesseract_result])
+            json.dumps([result, processed, prediction, timestamp, value, tesseract_result, confidence])
         ))
 
         # remove old evaluations (keep 5)
@@ -107,6 +118,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         conn.commit()
 
         print(f"Meter-Eval: Prediction saved for {name}")
+        return target_brightness, confidence
 
 def publish_value(mqtt_client, config, name, value):
     # publish to topic
@@ -138,15 +150,17 @@ def publish_registration(mqtt_client, config, name, type):
     mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
     print(f"Meter-Eval: Registration published for {name}")
 
-def add_history_entry(db_file: str, name: str, value: int, timestamp: str, config, manual: bool = False):
+def add_history_entry(db_file: str, name: str, value: int, confidence:int, target_brightness: float, timestamp: str, config, manual: bool = False):
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO history
-            VALUES (?,?,?,?)
+            VALUES (?,?,?,?,?,?)
         ''', (
             name,
             value,
+            confidence,
+            target_brightness,
             timestamp,
             manual
         ))

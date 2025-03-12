@@ -17,6 +17,9 @@ MQTT_TOPIC = "MeterMonitor/upload"
 # Image Filename Patterns
 ISO_TIMESTAMP_REGEX = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"  # Matches "2024-11-02T18:54:48"
 UNIX_TIMESTAMP_REGEX = r"^pic_\d{10}"  # Matches "pic_1737507953" (10-digit Unix timestamp)
+# match "20250307_131230" (8-digit date + 6-digit time) as TIMESTAMP_REGEX
+TIMESTAMP_REGEX = r"^\d{8}_\d{6}"
+
 MAX_IMAGES = 200  # Maximum number of images to send
 
 
@@ -24,7 +27,7 @@ def get_image_files():
     """List image files in the current directory that match timestamp patterns."""
     files = os.listdir(".")
     image_files = [file for file in files if
-                   re.match(ISO_TIMESTAMP_REGEX, file) or re.match(UNIX_TIMESTAMP_REGEX, file)]
+                   re.match(ISO_TIMESTAMP_REGEX, file) or re.match(UNIX_TIMESTAMP_REGEX, file) or re.match(TIMESTAMP_REGEX, file)]
     return sorted(image_files)  # Sort to ensure correct order
 
 
@@ -47,6 +50,8 @@ def extract_timestamp(file_name):
         return os.path.splitext(file_name)[0]  # Use the filename as timestamp
     elif re.match(UNIX_TIMESTAMP_REGEX, file_name):
         return file_name.split("_")[1].split(".")[0]  # Extract the Unix timestamp after 'pic_'
+    elif re.match(TIMESTAMP_REGEX, file_name):
+        return file_name.split(".")[0]
     return "unknown"
 
 
@@ -58,10 +63,12 @@ def build_message(file_path, picture_number):
 
     # If timestamp isn't in ISO format, convert it
     if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", timestamp):
-        timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(int(timestamp)))
+        if re.match(r"^\d{8}_\d{6}", timestamp):
+            timestamp = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]}T{timestamp[9:11]}:{timestamp[11:13]}:{timestamp[13:15]}"
+        else: timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(int(timestamp)))
 
     return {
-        "name": "TesseractWerntgesStream1",
+        "name": "TESTSENSOR5",
         "picture_number": picture_number,
         "WiFi-RSSI": -57,
         "picture": {

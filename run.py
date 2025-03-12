@@ -49,6 +49,7 @@ with open(path, 'r') as file:
                     threshold_last_high INTEGER,
                     islanding_padding INTEGER,
                     segments INTEGER,
+                    rotated_180 BOOLEAN,
                     shrink_last_3 BOOLEAN,
                     extended_last_digit BOOLEAN,
                     invert BOOLEAN,
@@ -67,6 +68,8 @@ with open(path, 'r') as file:
                 CREATE TABLE IF NOT EXISTS history (
                     name TEXT,
                     value INTEGER,
+                    confidence FLOAT,
+                    target_brightness FLOAT,
                     timestamp TEXT,
                     manual BOOLEAN,
                     FOREIGN KEY(name) REFERENCES watermeters(name)

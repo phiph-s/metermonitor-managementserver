@@ -6,7 +6,7 @@
     <div  style="max-width: 300px">
       <n-card v-if="data" :title="new Date(data.picture.timestamp).toLocaleString()" size="small">
         <template #cover>
-          <img :src="'data:image/'+data.picture.format+';base64,' + data.picture.data" alt="Watermeter"/>
+          <img :src="'data:image/'+data.picture.format+';base64,' + data.picture.data" alt="Watermeter" :class="{rotated: rotated180}"/>
         </template>
       </n-card>
       <n-divider/>
@@ -31,6 +31,20 @@
         </template>
         This will delete the meter with all its settings and data. Are you sure?
       </n-popconfirm>
+
+      <n-h6>
+        Settings
+      </n-h6>
+      <b>
+        Thresholds: {{threshold[0]}} - {{threshold[1]}}<br>
+        Last digit thresholds: {{threshold_last[0]}} - {{threshold_last[1]}}<br>
+        Islanding padding: {{islanding_padding}}<br>
+        Segments: {{segments}}<br>
+        Extended last digit: {{extendedLastDigit}}<br>
+        Last 3 digits narrow: {{last3DigitsNarrow}}<br>
+        Rotated 180: {{rotated180}}<br>
+        Invert: {{invert}}
+      </b>
     </div>
     <div style="padding-left: 20px;">
       <div style="height: calc(100vh - 120px); overflow: scroll;" class="bglight">
@@ -38,8 +52,12 @@
         <template v-if="decodedEvals">
       <template v-for="[i, evalDecoded] in decodedEvals.entries()" :key="i">
         <n-flex :class="{redbg: evalDecoded[4] == null}">
-          {{new Date(evalDecoded[3]).toLocaleString()}}<br>
-          {{ (evalDecoded[2].reduce((partialSum, a) => partialSum * a[0][1], 1) * 100).toFixed(1) }}%<br>
+          <n-flex vertical>
+            {{new Date(evalDecoded[3]).toLocaleString()}}<br>
+            <div v-if="evalDecoded[6]" :style="{color: getColor(evalDecoded[6]), fontSize: '20px'}">
+              <b>{{(evalDecoded[6] * 100).toFixed(1)}}</b>%
+            </div>
+          </n-flex>
           <table>
             <tr>
               <td v-for="base64 in evalDecoded[1]" :key="base64">
@@ -90,12 +108,13 @@
     </div>
     <div>
       <apex-chart class="bg" width="500" type="line" :series="series" :options="options"></apex-chart>
+      <apex-chart class="bg" width="500" type="line" :series="seriesConf" :options="optionsConf"></apex-chart>
     </div>
   </n-flex>
 </template>
 
 <script setup>
-import {NH2, NFlex, NCard, NDivider, NButton, NPopconfirm} from "naive-ui";
+import {NH2, NH6, NFlex, NCard, NDivider, NButton, NPopconfirm} from "naive-ui";
 import { useRoute } from 'vue-router';
 import {computed, onMounted, ref} from "vue";
 import router from "@/router";
@@ -113,6 +132,14 @@ const data = ref(null);
 const evaluations = ref(null);
 const history = ref(null);
 
+const threshold = ref([0, 0]);
+const threshold_last = ref([0, 0]);
+const islanding_padding = ref(0);
+const segments = ref(0);
+const extendedLastDigit = ref(false);
+const last3DigitsNarrow = ref(false);
+const rotated180 = ref(false);
+const invert = ref(false);
 
 const decodedEvals = computed(
   () => {
@@ -152,6 +179,24 @@ const loadMeter = async () => {
     }
   });
   history.value = await response.json();
+
+    response = await fetch(process.env.VUE_APP_HOST + 'api/settings/' + id, {
+    headers: {
+      'secret': `${localStorage.getItem('secret')}`
+    }
+  });
+
+  let result = await response.json();
+
+  threshold.value = [result.threshold_low, result.threshold_high];
+  threshold_last.value = [result.threshold_last_low, result.threshold_last_high];
+  islanding_padding.value = result.islanding_padding;
+
+  segments.value = result.segments;
+  extendedLastDigit.value = result.extended_last_digit === 1;
+  last3DigitsNarrow.value = result.shrink_last_3 === 1;
+  rotated180.value = result.rotated_180 === 1;
+  invert.value = result.invert === 1;
 }
 
 const series = computed(() => {
@@ -165,7 +210,22 @@ const series = computed(() => {
   }
 });
 
+const seriesConf = computed(() => {
+  if (history.value) {
+    console.log(history.value)
+    return [{
+      name: 'Confidence in %',
+      data: history.value.history.map((item) => [new Date(item[1]), item[2] * 100])
+    }]
+  } else {
+    return [];
+  }
+});
+
 const options = {
+  title: {
+    text: 'Consumption'
+  },
   chart: {
     type: 'line',
     zoom: {
@@ -186,6 +246,47 @@ const options = {
   yaxis: {
     title: {
       text: 'Consumption m³'
+    }
+  },
+  stroke: {
+    curve: 'smooth'
+  },
+  tooltip: {
+    x: {
+      format: 'dd MMM HH:mm'
+    }
+  }
+};
+
+const optionsConf = {
+  title: {
+    text: 'Confidence'
+  },
+  chart: {
+    type: 'line',
+    zoom: {
+      enabled: true
+    }
+  },
+  xaxis: {
+    type: 'datetime',
+    labels: {
+      formatter: function (value, timestamp) {
+      return new Date(timestamp).toLocaleString() // The formatter function overrides format property
+    },
+    },
+    title: {
+      text: 'Time'
+    }
+  },
+  yaxis: {
+    title: {
+      text: 'Confidence in %'
+    },
+    labels: {
+      formatter: function (value) {
+        return value.toFixed(1) + '%';
+      }
     }
   },
   stroke: {
@@ -261,5 +362,9 @@ const resetToSetup = async () => {
 .bglight{
   background-color: rgba(240, 240, 240, 0.1);
   padding: 20px;
+}
+
+.rotated{
+  transform: rotate(180deg);
 }
 </style>

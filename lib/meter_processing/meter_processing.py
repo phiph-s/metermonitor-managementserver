@@ -31,10 +31,10 @@ class MeterPredictor:
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Define the model architecture (same as during training)
-        self.digitmodel = load_model('models/th_digit_classifier_test.h5')
+        self.digitmodel = load_model('models/th_digit_classifier_2.h5')
         self.class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'r']
 
-    def predict_single_image(self, input_image, segments=7, contrast=1.0, padding=0.0, enhance_sharpness=False, extended_last_digit=False, shrink_last_3=False):
+    def predict_single_image(self, input_image, segments=7, contrast=1.0, rotated_180=False, enhance_sharpness=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None):
         """
         Predicts the water meter reading on a single image:
           - Runs YOLO detection for oriented bounding box (OBB)
@@ -49,6 +49,10 @@ class MeterPredictor:
             input_image_path (str): Path to the input image
             output_folder (str, None): Folder where to save results
         """
+
+        if rotated_180:
+            input_image = input_image.rotate(180)
+
         results = self.model.predict(input_image, save=False)
         obb_data = results[0].obb
 
@@ -148,7 +152,9 @@ class MeterPredictor:
         mean_brightnesses = [np.mean(img) for img in digits]
         # Adjust brightness of each image
         adjusted_images = []
-        target_brightness = np.mean(mean_brightnesses)
+        if target_brightness is None:
+            target_brightness = np.mean(mean_brightnesses)
+        print(f"Target brightness: {target_brightness}")
         for img, mean_brightness in zip(digits, mean_brightnesses):
             adjustment_factor = target_brightness / mean_brightness
             adjusted_img = np.clip(img * adjustment_factor, 0, 255).astype(np.uint8)
@@ -167,7 +173,7 @@ class MeterPredictor:
 
             base64s.append(img_str)
 
-        return base64s, digits
+        return base64s, digits, target_brightness
 
     def apply_threshold(self, digit, threshold_low, threshold_high, islanding_padding=40, invert=False):
         if invert:
@@ -231,42 +237,42 @@ class MeterPredictor:
         color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
         digit = cv2.resize(color_image, (40, 64))
 
-        #--- Crop to content with extra vertical padding (10% on top and bottom) ---
-        #Assuming background is white (255) and the content is darker.
-        coords = np.column_stack(np.where(digit != 255))
-        if coords.size > 0:
-            # Get the bounding box of non-background pixels.
-            y0, x0 = coords.min(axis=0)
-            y1, x1 = coords.max(axis=0)
-            # Compute the height of the content.
-            content_height = y1 - y0 + 1
-            # Calculate 10% of the content height as padding.
-            pad = int(0.1 * content_height)
-            # Expand the bounding box vertically (making sure we don't go out of bounds).
-            new_y0 = max(0, y0 - pad)
-            new_y1 = min(digit.shape[0] - 1, y1 + pad)
-            digit_cropped = digit[new_y0:new_y1 + 1, x0:x1 + 1]
-        else:
-            # If no content is found, use the whole image.
-            digit_cropped = digit
-
-        # --- Resize while preserving aspect ratio ---
-        target_width, target_height = 40, 64
-        h, w = digit_cropped.shape[:2]
-        # Determine the scaling factor so that the image fits within the target dimensions.
-        scale = min(target_width / w, target_height / h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        digit_resized = cv2.resize(digit_cropped, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        # --- Place the resized image on a white canvas of the target size ---
-        digit_padded = np.full((target_height, target_width), 255, dtype=np.uint8)
-        x_offset = (target_width - new_w) // 2
-        y_offset = (target_height - new_h) // 2
-        digit_padded[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = digit_resized
+        # #--- Crop to content with extra vertical padding (10% on top and bottom) ---
+        # #Assuming background is white (255) and the content is darker.
+        # coords = np.column_stack(np.where(digit != 255))
+        # if coords.size > 0:
+        #     # Get the bounding box of non-background pixels.
+        #     y0, x0 = coords.min(axis=0)
+        #     y1, x1 = coords.max(axis=0)
+        #     # Compute the height of the content.
+        #     content_height = y1 - y0 + 1
+        #     # Calculate 10% of the content height as padding.
+        #     pad = int(0.1 * content_height)
+        #     # Expand the bounding box vertically (making sure we don't go out of bounds).
+        #     new_y0 = max(0, y0 - pad)
+        #     new_y1 = min(digit.shape[0] - 1, y1 + pad)
+        #     digit_cropped = digit[new_y0:new_y1 + 1, x0:x1 + 1]
+        # else:
+        #     # If no content is found, use the whole image.
+        #     digit_cropped = digit
+        #
+        # # --- Resize while preserving aspect ratio ---
+        # target_width, target_height = 40, 64
+        # h, w = digit_cropped.shape[:2]
+        # # Determine the scaling factor so that the image fits within the target dimensions.
+        # scale = min(target_width / w, target_height / h)
+        # new_w = int(w * scale)
+        # new_h = int(h * scale)
+        # digit_resized = cv2.resize(digit_cropped, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        #
+        # # --- Place the resized image on a white canvas of the target size ---
+        # digit_padded = np.full((target_height, target_width), 255, dtype=np.uint8)
+        # x_offset = (target_width - new_w) // 2
+        # y_offset = (target_height - new_h) // 2
+        # digit_padded[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = digit_resized
 
         # --- Normalize & add extra dimensions ---
-        img_norm = digit_padded.astype('float32') / 255.0
+        img_norm = digit.astype('float32') / 255.0
         img_norm = np.expand_dims(img_norm, axis=-1)  # add channel dimension
         img_norm = np.expand_dims(img_norm, axis=0)  # add batch dimension
 
@@ -291,26 +297,26 @@ class MeterPredictor:
 
         # Use Tesseract to predict the digit as a fallback/alternative
         # Get TSV output from Tesseract
-        tsv_data = pytesseract.image_to_data(binary_image, config=config, output_type=Output.DICT)
-
-        # Iterate over the returned results to extract text and confidence.
-        recognized_text = ""
-        max_conf = -1
-        for i, text in enumerate(tsv_data['text']):
-            text = text.strip()
-            if text:  # only consider non-empty entries
-                try:
-                    conf = int(tsv_data['conf'][i])
-                except ValueError:
-                    conf = -1
-                if conf > max_conf:
-                    max_conf = conf
-                    recognized_text = text
+        # tsv_data = pytesseract.image_to_data(binary_image, config=config, output_type=Output.DICT)
+        #
+        # # Iterate over the returned results to extract text and confidence.
+        # recognized_text = ""
+        # max_conf = -1
+        # for i, text in enumerate(tsv_data['text']):
+        #     text = text.strip()
+        #     if text:  # only consider non-empty entries
+        #         try:
+        #             conf = int(tsv_data['conf'][i])
+        #         except ValueError:
+        #             conf = -1
+        #         if conf > max_conf:
+        #             max_conf = conf
+        #             recognized_text = text[0]
 
         # Compose the result from Tesseract with confidence info
         tesseract_result = None
-        if max_conf >= 90:
-            tesseract_result = recognized_text.strip(), max_conf
+        #if max_conf >= 90:
+        #    tesseract_result = recognized_text.strip(), max_conf
 
         # Perform prediction using your model
         predictions = self.digitmodel.predict(digit)

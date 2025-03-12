@@ -14,6 +14,7 @@
           :extended-last-digit="extendedLastDigit"
           :last-3-digits-narrow="last3DigitsNarrow"
           :segments="segments"
+          :rotated180="rotated180"
           :encoded-latest="evaluations.evals?evaluations.evals[evaluations.evals.length-1]:null"
           @update="updateSegmentationSettings"/>
     </n-step>
@@ -112,6 +113,7 @@ const tresholdedImages = ref([]);
 const segments = ref(0);
 const extendedLastDigit = ref(false);
 const last3DigitsNarrow = ref(false);
+const rotated180 = ref(false);
 const invert = ref(false);
 
 const getData = async () => {
@@ -144,6 +146,7 @@ const getData = async () => {
   segments.value = result.segments;
   extendedLastDigit.value = result.extended_last_digit === 1;
   last3DigitsNarrow.value = result.shrink_last_3 === 1;
+  rotated180.value = result.rotated_180 === 1;
   invert.value = result.invert === 1;
 }
 
@@ -179,6 +182,7 @@ const updateSegmentationSettings = async (data) => {
   segments.value = data.segments;
   extendedLastDigit.value = data.extendedLastDigit;
   last3DigitsNarrow.value = data.last3DigitsNarrow;
+  rotated180.value = data.rotated180;
 
   await updateSettings();
   reevaluate();
@@ -192,6 +196,7 @@ const updateSettings = async () => {
     threshold_last_low: threshold_last.value[0],
     threshold_last_high: threshold_last.value[1],
     islanding_padding: islanding_padding.value,
+    rotated_180: rotated180.value,
     segments: segments.value,
     extended_last_digit: extendedLastDigit.value,
     shrink_last_3: last3DigitsNarrow.value,
