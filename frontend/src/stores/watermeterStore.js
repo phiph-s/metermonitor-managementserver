@@ -24,6 +24,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     conf_threshold: null,
     roi_extractor: 'yolo',
     template_id: null,
+    segment_mode: 'display',
   });
 
   // Actions
@@ -76,6 +77,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       conf_threshold: data.conf_threshold,
       roi_extractor: data.roi_extractor || 'yolo',
       template_id: data.template_id || null,
+      segment_mode: data.segment_mode || 'display',
       use_correctional_alg: data.use_correctional_alg === 1 || data.use_correctional_alg === true
     });
 
@@ -97,6 +99,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       conf_threshold: settings.conf_threshold,
       roi_extractor: settings.roi_extractor,
       template_id: settings.template_id,
+      segment_mode: settings.segment_mode,
       use_correctional_alg: settings.use_correctional_alg,
     };
 

@@ -111,7 +111,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         # Get current settings for the watermeter
         cursor.execute('''
                    SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
-                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, use_correctional_alg
+                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg
                    FROM settings
                    WHERE name = ?
                ''', (name,))
@@ -127,7 +127,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         conf_threshold = settings[10] if settings[10] else 0.0
         roi_extractor = settings[11] if settings[11] else "yolo"
         template_id = settings[12] if settings[12] else None
-        use_correctional_alg = bool(settings[13]) if settings[13] is not None else True
+        segment_mode = settings[13] if settings[13] else "display"
+        use_correctional_alg = bool(settings[14]) if settings[14] is not None else True
 
         # Get the target_brightness from the last history entry
         cursor.execute("SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
@@ -164,7 +165,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             rotated_180=rotated_180,
             target_brightness=target_brightness,
             roi_extractor=roi_extractor,
-            extractor_instance=extractor_instance
+            extractor_instance=extractor_instance,
+            segment_mode=segment_mode
         )
 
         if not result or len(result) == 0:

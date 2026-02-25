@@ -10,7 +10,7 @@ import base64
 import json
 import numpy as np
 import cv2
-from lib.meter_processing.roi_extractors.base import ROIExtractorTemplated
+from lib.meter_processing.roi_extractors.base import ROIExtractor, ROIExtractorTemplated
 
 
 class StaticRectExtractor(ROIExtractorTemplated):
@@ -46,6 +46,13 @@ class StaticRectExtractor(ROIExtractorTemplated):
         self.target_height = config_dict.get('target_height', 100)
         self.target_width_ext = config_dict.get('target_width_ext', int(self.target_width * 1.2))
         self.target_height_ext = config_dict.get('target_height_ext', int(self.target_height * 1.2))
+
+        self.segment_mode = config_dict.get('segment_mode', 'display')
+        digit_corners = config_dict.get('digit_corners')
+        if digit_corners:
+            self.digit_corners = np.array(digit_corners, dtype=np.float32)
+        else:
+            self.digit_corners = None
 
         # Calculate bounding box for the rectangle
         self._compute_bbox()
@@ -167,6 +174,56 @@ class StaticRectExtractor(ROIExtractorTemplated):
         boundingboxed_image_b64 = base64.b64encode(buffer).decode("utf-8") if success else None
 
         return cropped, cropped_ext, boundingboxed_image_b64
+
+    def extract_segments(self, input_image, segments, extended_last_digit=False, shrink_last_3=False, segment_mode="display"):
+        self.last_error = None
+        if segment_mode != "each_digit":
+            return super().extract_segments(
+                input_image,
+                segments=segments,
+                extended_last_digit=extended_last_digit,
+                shrink_last_3=shrink_last_3,
+                segment_mode=segment_mode,
+            )
+
+        if self.digit_corners is None or len(self.digit_corners) == 0:
+            self.last_error = "digit_corners missing for each_digit mode. Please update and save the template."
+            return [], None
+
+        if len(self.digit_corners) != segments:
+            self.last_error = f"digit_corners count ({len(self.digit_corners)}) does not match segments ({segments}). Please update and save the template."
+            return [], None
+
+        img_height, img_width = input_image.shape[:2]
+        digits = []
+
+        for idx, quad in enumerate(self.digit_corners):
+            quad = np.array(quad, dtype=np.float32)
+            if quad.shape != (4, 2):
+                self.last_error = f"Invalid digit quad at index {idx}"
+                return [], None
+            if (np.any(quad[:, 0] < 0) or np.any(quad[:, 0] >= img_width) or
+                np.any(quad[:, 1] < 0) or np.any(quad[:, 1] >= img_height)):
+                self.last_error = f"Digit quad {idx} is outside image bounds"
+                return [], None
+            warped = ROIExtractor.warp_quad(input_image, quad)
+            if warped is None:
+                self.last_error = f"Failed to warp digit quad {idx}"
+                return [], None
+            digits.append(warped)
+
+        boundingboxed_image = self._draw_digit_quads(input_image, self.digit_corners)
+        return digits, boundingboxed_image
+
+    def _draw_digit_quads(self, input_image, quads):
+        img = input_image.copy()
+        for i, quad in enumerate(quads):
+            pts = np.array(quad, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(img, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
+            center = np.mean(quad, axis=0).astype(int)
+            cv2.putText(img, str(i), tuple(center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        success, buffer = cv2.imencode(".png", img)
+        return base64.b64encode(buffer).decode("utf-8") if success else None
 
     @classmethod
     def from_database(cls, db_connection, template_id):

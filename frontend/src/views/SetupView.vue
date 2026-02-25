@@ -16,8 +16,10 @@
             :segments="segments"
             :rotated180="rotated180"
             :roi-extractor="roiExtractor"
+            :segment-mode="segmentMode"
             :capturing="capturing"
             :template-points="templatePoints"
+            :digit-quads="templateDigitQuads"
             :template-ready="templateReady"
             :template-saving="templateSaving"
             :evaluation="evaluation"
@@ -29,7 +31,8 @@
             @next="onSegmentationNext"
             @recapture="() => setupStore.triggerCapture(id)"
             @update-template-points="(points) => { templatePoints.value = points }"
-            @save-template="() => setupStore.saveTemplate(id, templatePoints.value)"
+            @update-digit-quads="(quads) => { templateDigitQuads.value = quads }"
+            @save-template="() => setupStore.saveTemplate(id, templatePoints.value, templateDigitQuads.value)"
         />
         </div>
         <br>
@@ -180,14 +183,16 @@ const extendedLastDigit = computed(() => settings.value?.extended_last_digit || 
 const last3DigitsNarrow = computed(() => settings.value?.shrink_last_3 || false);
 const rotated180 = computed(() => settings.value?.rotated_180 || false);
 const roiExtractor = computed(() => settings.value?.roi_extractor || 'yolo');
+const segmentMode = computed(() => settings.value?.segment_mode || 'display');
 const templateId = computed(() => settings.value?.template_id || null);
 const templateReady = computed(() => !!templateId.value);
-const isTemplateExtractor = (value) => ['orb'].includes(value);
+const isTemplateExtractor = (value) => ['orb', 'static_rect'].includes(value);
 const maxFlowRate = computed(() => settings.value?.max_flow_rate || 0);
 const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
 
 const templatePoints = ref([]);
+const templateDigitQuads = ref([]);
 const pendingTemplateSave = ref(false);
 
 watch(templateId, async (next) => {
@@ -199,29 +204,40 @@ watch(templateId, async (next) => {
     x: point[0] / template.image_width,
     y: point[1] / template.image_height
   }));
+  if (template?.config?.digit_corners?.length) {
+    templateDigitQuads.value = template.config.digit_corners.map((quad) =>
+      quad.map((point) => ({
+        x: point[0] / template.image_width,
+        y: point[1] / template.image_height
+      }))
+    );
+  } else {
+    templateDigitQuads.value = [];
+  }
 });
 
 watch(
-  () => roiExtractor.value,
-  (nextExtractor, prevExtractor) => {
+  () => [roiExtractor.value, segmentMode.value],
+  ([nextExtractor, nextMode], [prevExtractor, prevMode]) => {
     if (!isTemplateExtractor(nextExtractor)) {
       pendingTemplateSave.value = false;
       return;
     }
-    if (nextExtractor !== prevExtractor) {
+    if (nextExtractor !== prevExtractor || nextMode !== prevMode) {
       pendingTemplateSave.value = true;
     }
   }
 );
 
 watch(
-  () => [pendingTemplateSave.value, templateId.value, templateSaving.value, templatePoints.value, lastPicture.value],
-  ([pending, nextTemplateId, saving, points, picture]) => {
+  () => [pendingTemplateSave.value, templateId.value, templateSaving.value, templatePoints.value, templateDigitQuads.value, lastPicture.value, segmentMode.value, segments.value],
+  ([pending, nextTemplateId, saving, points, digitQuads, picture, mode, segmentCount]) => {
     if (!pending || saving || nextTemplateId) return;
     if (!picture?.picture?.data) return;
-    if (!points || points.length !== 4) return;
+    if (mode === 'display' && (!points || points.length !== 4)) return;
+    if (mode === 'each_digit' && (!digitQuads || digitQuads.length !== segmentCount)) return;
     pendingTemplateSave.value = false;
-    setupStore.saveTemplate(id, points);
+    setupStore.saveTemplate(id, points, digitQuads);
   },
   { deep: true }
 );

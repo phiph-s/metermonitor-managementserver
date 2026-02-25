@@ -59,7 +59,7 @@ class MeterPredictor:
         print(f"[MeterPredictor] YOLO input: {self.yolo_input_name}")
         print(f"[MeterPredictor] Digit classifier input: {self.digit_input_name}")
 
-    def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None):
+    def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None, segment_mode="display"):
         """
         Predicts the water meter reading on a single image:
           - Runs YOLO detection for oriented bounding box (OBB)
@@ -90,47 +90,19 @@ class MeterPredictor:
             extractor = BypassExtractor()
         else:
             extractor = YOLOExtractor(self.yolo_session, self.yolo_input_name, extended_last_digit=extended_last_digit)
-        rotated_cropped_img, rotated_cropped_img_ext, boundingboxed_image = extractor.extract(input_image)
-        if rotated_cropped_img is None:
+        digits, boundingboxed_image = extractor.extract_segments(
+            input_image,
+            segments=segments,
+            extended_last_digit=extended_last_digit,
+            shrink_last_3=shrink_last_3,
+            segment_mode=segment_mode,
+        )
+        if not digits or len(digits) == 0:
             self.last_error = getattr(extractor, "last_error", None) or "No result found"
             return [], [], None, None
 
         if use_templated_extractor and rotated_180:
-            rotated_cropped_img = cv2.rotate(rotated_cropped_img, cv2.ROTATE_180)
-            if rotated_cropped_img_ext is not None:
-                rotated_cropped_img_ext = cv2.rotate(rotated_cropped_img_ext, cv2.ROTATE_180)
-
-        # Split the cropped meter into segments vertical parts for classification
-        if segments < 2:
-            self.last_error = "Segments must be at least 2"
-            return [], [], None, None
-        part_width = rotated_cropped_img.shape[1] // segments
-
-        base64s = []
-        digits = []
-
-        last_x = 0
-
-        # cut out the segments
-        for i in range(segments):
-            if shrink_last_3 and i >= segments - 3:
-                t_part_width = int(part_width * 0.8)
-            elif shrink_last_3:
-                t_part_width = int(((part_width * segments) - (3 * part_width * 0.8)) / (segments - 3))
-            else:
-                t_part_width = part_width
-
-            # Extract segment from last_x to last_x + t_part_width
-            part = rotated_cropped_img[:, last_x: last_x + t_part_width]
-
-            if extended_last_digit and i == segments - 1 and rotated_cropped_img_ext is not None:
-                ext_end_x = rotated_cropped_img_ext.shape[1]
-                ext_start_x = max(ext_end_x - t_part_width, 0)
-                part = rotated_cropped_img_ext[:, ext_start_x:ext_end_x]
-            last_x = last_x + t_part_width
-
-            # Convert segment to base64 string for storage
-            digits.append(part)
+            digits = [cv2.rotate(digit, cv2.ROTATE_180) for digit in digits]
 
         # Adjust brightness of each image
         mean_brightnesses = [np.mean(img) for img in digits]
@@ -145,6 +117,7 @@ class MeterPredictor:
         digits = adjusted_images
 
         # Convert to base64 for temporary storage
+        base64s = []
         for part in digits:
             # Store cutouts as RGB to avoid BGR/RGB channel confusion.
             if len(part.shape) == 3:

@@ -3,10 +3,18 @@
     <template #cover>
       <div class="image-container">
         <TemplatePointEditor
-          v-if="isTemplateExtractor && lastPicture"
+          v-if="isTemplateExtractor && lastPicture && segmentModeValue === 'display'"
           :image-src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data"
           :points="templatePoints"
           @update:points="emits('updateTemplatePoints', $event)"
+        />
+        <TemplateDigitEditor
+          v-else-if="isTemplateExtractor && lastPicture && segmentModeValue === 'each_digit'"
+          :image-src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data"
+          :quads="digitQuads"
+          :segments="segments"
+          :display-corners="templatePoints"
+          @update:quads="emits('updateDigitQuads', $event)"
         />
         <img v-else-if="lastPicture && lastPicture.picture.data_bbox" :src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data_bbox" alt="Watermeter" />
         <img v-else-if="lastPicture" :src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data" alt="Watermeter" />
@@ -29,16 +37,7 @@
           <n-spin size="small" />
         </div>
       </div>
-    </template>
-    <br>
-
-    <n-alert v-if="noBoundingBox && !isTemplateExtractor" title="No bounding box found" type="warning" style="margin-bottom: 15px;">
-      Without a bounding box the segmentation will not work. Adjust the camera angle or lighting and try again.
-    </n-alert>
-    <n-alert v-if="reevaluateError" title="Extraction failed" type="warning" style="margin-bottom: 15px;">
-      {{ reevaluateError }}
-    </n-alert>
-
+    </template><br>
     <ROIExtractorSelect
       :value="currentExtractor"
       :options="extractorOptions"
@@ -50,7 +49,35 @@
       @update:value="handleUpdate('roiExtractor', $event)"
       @save-template="emits('saveTemplate')"
     />
-    <br>
+  </n-card><br>
+  <n-card>
+
+    <n-alert v-if="noBoundingBox && !isTemplateExtractor" title="No bounding box found" type="warning" style="margin-bottom: 15px;">
+      Without a bounding box the segmentation will not work. Adjust the camera angle or lighting and try again.
+    </n-alert>
+    <n-alert v-if="reevaluateError" title="Extraction failed" type="warning" style="margin-bottom: 15px;">
+      {{ reevaluateError }}
+    </n-alert>
+
+    <n-flex v-if="isTemplateExtractor" align="center" :size="8" class="padd">
+      <n-switch
+        :value="segmentModeValue"
+        :checked-value="'each_digit'"
+        :unchecked-value="'display'"
+        @update:value="handleUpdate('segmentMode', $event)"
+        :disabled="loading"
+      />
+      <n-tooltip>
+        <template #trigger>
+          <span class="tooltip-trigger">
+            <n-icon size="16"><GridViewOutlined /></n-icon>
+            <span>Segmentation mode: {{ segmentModeValue === 'each_digit' ? 'Each digit' : 'Display' }}</span>
+          </span>
+        </template>
+        <span>Display: select one large region.<br>Each digit: select one quad per digit.</span>
+      </n-tooltip>
+    </n-flex>
+
     <n-tooltip>
       <template #trigger>
         Segments
@@ -68,7 +95,7 @@
       <n-switch
         :value="extendedLastDigit"
         @update:value="handleUpdate('extendedLastDigit', $event)"
-        :disabled="loading"
+        :disabled="loading || isEachDigitMode"
       />
       <n-tooltip>
         <template #trigger>
@@ -84,7 +111,7 @@
       <n-switch
         :value="last3DigitsNarrow"
         @update:value="handleUpdate('last3DigitsNarrow', $event)"
-        :disabled="loading"
+        :disabled="loading || isEachDigitMode"
       />
       <n-tooltip>
         <template #trigger>
@@ -137,9 +164,11 @@ import {
   AddCircleOutlineOutlined,
   CameraAltOutlined,
   CompressOutlined,
-  RotateRightOutlined
+  RotateRightOutlined,
+  GridViewOutlined
 } from '@vicons/material';
 import TemplatePointEditor from '@/components/TemplatePointEditor.vue';
+import TemplateDigitEditor from '@/components/TemplateDigitEditor.vue';
 import ROIExtractorSelect from '@/components/ROIExtractorSelect.vue';
 
 const props = defineProps([
@@ -151,7 +180,9 @@ const props = defineProps([
     'evaluation',
     'rotated180',
     'roiExtractor',
+    'segmentMode',
     'templatePoints',
+    'digitQuads',
     'templateReady',
     'templateSaving',
     'capturing',
@@ -159,7 +190,7 @@ const props = defineProps([
     'noBoundingBox',
     'reevaluateError'
 ]);
-const emits = defineEmits(['update', 'next', 'recapture', 'updateTemplatePoints', 'saveTemplate']);
+const emits = defineEmits(['update', 'next', 'recapture', 'updateTemplatePoints', 'updateDigitQuads', 'saveTemplate']);
 
 const formattedTimestamp = computed(() => {
   if (!props.timestamp) return '';
@@ -183,6 +214,8 @@ const extractorOptions = [
 
 const currentExtractor = computed(() => props.roiExtractor || 'yolo');
 const isTemplateExtractor = computed(() => ['orb', 'static_rect'].includes(currentExtractor.value));
+const segmentModeValue = computed(() => props.segmentMode || 'display');
+const isEachDigitMode = computed(() => segmentModeValue.value === 'each_digit');
 const hasTemplatePoints = computed(() => Array.isArray(props.templatePoints) && props.templatePoints.length === 4);
 
 const handleUpdate = (field, value) => {
@@ -191,7 +224,8 @@ const handleUpdate = (field, value) => {
     extendedLastDigit: field === 'extendedLastDigit' ? value : props.extendedLastDigit,
     last3DigitsNarrow: field === 'last3DigitsNarrow' ? value : props.last3DigitsNarrow,
     rotated180: field === 'rotated180' ? value : props.rotated180,
-    roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor
+    roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor,
+    segmentMode: field === 'segmentMode' ? value : props.segmentMode
   });
 };
 

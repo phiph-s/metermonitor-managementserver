@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import sqlite3
 from PIL import Image
-from lib.meter_processing.roi_extractors.base import ROIExtractorTemplated
+from lib.meter_processing.roi_extractors.base import ROIExtractor, ROIExtractorTemplated
 
 
 class ORBExtractor(ROIExtractorTemplated):
@@ -57,6 +57,13 @@ class ORBExtractor(ROIExtractorTemplated):
         self.max_reprojection_error = config_dict.get('max_reprojection_error', 5.0)
         self.matching_mask_padding = config_dict.get('matching_mask_padding', 4)
         self.lowe_ratio = config_dict.get('lowe_ratio', 0.8)
+
+        self.segment_mode = config_dict.get('segment_mode', 'display')
+        digit_corners = config_dict.get('digit_corners')
+        if digit_corners:
+            self.digit_corners = np.array(digit_corners, dtype=np.float32)
+        else:
+            self.digit_corners = None
 
         # ORB parameters
         orb_nfeatures = config_dict.get('orb_nfeatures', 3000)
@@ -172,6 +179,74 @@ class ORBExtractor(ROIExtractorTemplated):
         if isinstance(input_image, Image.Image):
             input_image = cv2.cvtColor(np.array(input_image), cv2.COLOR_RGB2BGR)
 
+        H, num_inliers, inlier_ratio = self._compute_homography(input_image)
+        if H is None:
+            return None, None, None
+
+        # 4. Transform ROI corners
+        corners_homog = np.hstack([self.display_corners, np.ones((4, 1))])
+        transformed = (H @ corners_homog.T).T
+        transformed_corners = (transformed[:, :2] / transformed[:, 2:3]).astype(np.float32)
+
+        # 5. Extract display
+        cropped = self._warp_roi(input_image, transformed_corners,
+                                 self.target_width, self.target_height)
+        cropped_ext = self._warp_roi(input_image, transformed_corners,
+                                     self.target_width_ext, self.target_height_ext)
+        boundingboxed = self._draw_bbox(input_image, transformed_corners)
+
+        print("[ROIExtractor (ORB)]" + f"Success: {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
+        return cropped, cropped_ext, boundingboxed
+
+    def extract_segments(self, input_image, segments, extended_last_digit=False, shrink_last_3=False, segment_mode="display"):
+        self.last_error = None
+        if segment_mode != "each_digit":
+            return super().extract_segments(
+                input_image,
+                segments=segments,
+                extended_last_digit=extended_last_digit,
+                shrink_last_3=shrink_last_3,
+                segment_mode=segment_mode,
+            )
+
+        if self.digit_corners is None or len(self.digit_corners) == 0:
+            self.last_error = "digit_corners missing for each_digit mode. Please update and save the template."
+            return [], None
+
+        if len(self.digit_corners) != segments:
+            self.last_error = f"digit_corners count ({len(self.digit_corners)}) does not match segments ({segments}). Please update and save the template."
+            return [], None
+
+        self.last_error = None
+        if isinstance(input_image, Image.Image):
+            input_image = cv2.cvtColor(np.array(input_image), cv2.COLOR_RGB2BGR)
+
+        H, num_inliers, inlier_ratio = self._compute_homography(input_image)
+        if H is None:
+            return [], None
+
+        transformed_quads = []
+        digits = []
+        for idx, quad in enumerate(self.digit_corners):
+            quad = np.array(quad, dtype=np.float32)
+            if quad.shape != (4, 2):
+                self.last_error = f"Invalid digit quad at index {idx}"
+                return [], None
+            quad_homog = np.hstack([quad, np.ones((4, 1))])
+            transformed = (H @ quad_homog.T).T
+            quad_transformed = (transformed[:, :2] / transformed[:, 2:3]).astype(np.float32)
+            warped = ROIExtractor.warp_quad(input_image, quad_transformed)
+            if warped is None:
+                self.last_error = f"Failed to warp digit quad {idx}"
+                return [], None
+            transformed_quads.append(quad_transformed)
+            digits.append(warped)
+
+        boundingboxed = self._draw_digit_quads(input_image, transformed_quads)
+        print("[ROIExtractor (ORB)]" + f"Success (each_digit): {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
+        return digits, boundingboxed
+
+    def _compute_homography(self, input_image):
         # Ensure precomputed data is available
         if self.ref_descriptors is None:
             precomputed = self.compute_precomputed_data()
@@ -217,7 +292,7 @@ class ORBExtractor(ROIExtractorTemplated):
             print("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
-        num_inliers = np.sum(mask)
+        num_inliers = int(np.sum(mask))
         inlier_ratio = num_inliers / len(good_matches)
 
         # Quality check
@@ -231,20 +306,26 @@ class ORBExtractor(ROIExtractorTemplated):
             print("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
-        # 4. Transform ROI corners
-        corners_homog = np.hstack([self.display_corners, np.ones((4, 1))])
-        transformed = (H @ corners_homog.T).T
-        transformed_corners = (transformed[:, :2] / transformed[:, 2:3]).astype(np.float32)
+        return H, num_inliers, inlier_ratio
 
-        # 5. Extract display
-        cropped = self._warp_roi(input_image, transformed_corners,
-                                 self.target_width, self.target_height)
-        cropped_ext = self._warp_roi(input_image, transformed_corners,
-                                     self.target_width_ext, self.target_height_ext)
-        boundingboxed = self._draw_bbox(input_image, transformed_corners)
-
-        print("[ROIExtractor (ORB)]" + f"Success: {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
-        return cropped, cropped_ext, boundingboxed
+    def _draw_digit_quads(self, image, quads):
+        result = image.copy()
+        for i, quad in enumerate(quads):
+            pts = np.array(quad, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(result, [pts], True, (0, 255, 0), 2)
+            center = np.mean(quad, axis=0).astype(int)
+            cv2.putText(result, str(i), tuple(center),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        max_dim = max(result.shape[0], result.shape[1])
+        if max_dim > 1600:
+            scale = 1600 / max_dim
+            new_w = int(result.shape[1] * scale)
+            new_h = int(result.shape[0] * scale)
+            result = cv2.resize(result, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        success, buffer = cv2.imencode('.png', result)
+        if not success:
+            return None
+        return base64.b64encode(buffer).decode('utf-8')
 
     def _estimate_target_size(self, corners):
         """Estimate target size from ROI corners."""
