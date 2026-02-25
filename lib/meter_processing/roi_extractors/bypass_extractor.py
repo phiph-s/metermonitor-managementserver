@@ -9,6 +9,9 @@ from lib.meter_processing.roi_extractors.base import ROIExtractor
 
 
 class BypassExtractor(ROIExtractor):
+    def __init__(self, rotated_180=False):
+        self.rotated_180 = rotated_180
+
     def extract(self, input_image):
         print("[ROIExtractor (Bypass)] Bypassing region-of-interest detection...")
         self.last_error = None
@@ -17,6 +20,9 @@ class BypassExtractor(ROIExtractor):
         # Convert RGB (from PIL) to BGR for consistent OpenCV processing
         if img_np.ndim == 3 and img_np.shape[2] >= 3:
             img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+
+        if self.rotated_180:
+            img_np = cv2.rotate(img_np, cv2.ROTATE_180)
 
         height, width = img_np.shape[:2]
 

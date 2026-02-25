@@ -87,7 +87,7 @@ class MeterPredictor:
         if extractor_instance is not None:
             extractor = extractor_instance
         elif roi_extractor == "bypass":
-            extractor = BypassExtractor()
+            extractor = BypassExtractor(rotated_180=rotated_180)
         else:
             extractor = YOLOExtractor(self.yolo_session, self.yolo_input_name, extended_last_digit=extended_last_digit)
         digits, boundingboxed_image = extractor.extract_segments(

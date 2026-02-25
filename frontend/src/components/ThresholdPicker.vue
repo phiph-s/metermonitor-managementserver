@@ -1,7 +1,12 @@
 <template>
-  <n-card>
+  <n-card size="small">
+    <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Select thresholds</span><span style="opacity: 0.7"></span>
+      </div>
+    </template>
     <!-- Search controls -->
-    <n-flex align="center" justify="space-between" style="margin-bottom: 8px">
+    <n-flex align="center" justify="space-between" style="margin-bottom: 8px; padding-top: 16px;">
       <n-flex align="center" :size="8">
         <n-input-group>
           <n-input-group-label size="small">Depth:</n-input-group-label>
@@ -238,4 +243,12 @@ async function thresholdImage(base64, threshold, islanding_padding = 0) {
   border: 1px solid rgba(255, 255, 255, 0.16);
   mix-blend-mode: screen;
 }
+
+.card-title{
+  text-transform: uppercase;
+  width:100%;
+  background-color: rgba(125, 125, 125, 0.1);
+  text-align: center;
+}
+
 </style>

@@ -1,12 +1,12 @@
 <template>
-  <n-card>
+  <n-card size="small">
     <template #cover>
       <div class="card-title">
         <span style="font-weight: bolder;">Base Settings</span><span style="opacity: 0.7"> - change immediately</span>
       </div>
     </template>
-    <br>
-    <n-flex justify="space-between" align="center">
+
+    <n-flex justify="space-between" align="center" style="padding-top: 16px;">
      <n-tooltip>
         <template #trigger>
           Number of Digits
@@ -23,7 +23,7 @@
     </n-flex>
 
   </n-card><br>
-  <n-card>
+  <n-card size="small">
     <template #cover>
       <div class="card-title">
         <span style="font-weight: bolder;">Extract</span><span style="opacity: 0.7"> all digits</span>
@@ -64,7 +64,8 @@
           <n-spin size="small" />
         </div>
       </div>
-    </template><br>
+    </template>
+    <div style="padding-top: 16px;"></div>
     <ROIExtractorSelect
       :value="currentExtractor"
       :options="extractorOptions"
@@ -142,12 +143,13 @@
       </n-flex>
     </div>
   </n-card><br>
-  <n-card>
+  <n-card size="small">
     <template #cover>
       <div class="card-title">
         <span style="font-weight: bolder;">Post-processing</span><span style="opacity: 0.7"> & Preview</span>
       </div>
-    </template><br>
+    </template>
+    <div style="padding-top: 16px;"></div>
     <n-alert v-if="noBoundingBox && !isTemplateExtractor" title="No bounding box found" type="warning" style="margin-bottom: 15px;">
       Without a bounding box the segmentation will not work. Adjust the camera angle or lighting and try again.
     </n-alert>
@@ -160,11 +162,14 @@
         :value="rotated180"
         @update:value="handleUpdate('rotated180', $event)"
         :disabled="loading"
-      />
+      >
+        <template #icon>
+          <n-icon size="16"><RotateRightOutlined /></n-icon>
+        </template>
+      </n-switch>
       <n-tooltip>
         <template #trigger>
           <span class="tooltip-trigger">
-            <n-icon size="16"><RotateRightOutlined /></n-icon>
             <span>180° rotated</span>
           </span>
         </template>
@@ -173,8 +178,13 @@
     </n-flex>
     <template #action v-if="evaluation">
       <n-flex justify="space-around" :size="[0,0]">
-        <div v-for="base64 in evaluation['colored_digits']" :key="base64">
-          <img :style="`width:calc(350px / ${evaluation['colored_digits'].length});`" class="digit"  :src="'data:image/png;base64,' + base64" alt="D"/>
+        <div v-for="[index, base64] in evaluation['colored_digits'].entries()" :key="base64" style="text-align: center;">
+          <img :style="`width:calc(350px / ${evaluation['colored_digits'].length});`" class="digit"  :src="'data:image/png;base64,' + base64" alt="D"/><br>
+          <n-flex justify="center" style="position: relative; top: -10px;">
+            <div class="digit-handle">
+              {{index + 1}}
+            </div>
+          </n-flex>
         </div>
       </n-flex><br>
       <n-flex justify="end">
@@ -318,5 +328,21 @@ const handleUpdate = (field, value) => {
 .padd {
   margin-bottom: 10px;
 }
+
+.digit-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(30, 30, 30, 0.8);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: white;
+  z-index: 2;
+}
+
 
 </style>

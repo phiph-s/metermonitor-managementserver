@@ -143,7 +143,10 @@ class MQTTHandler:
                     ))
                     cursor.execute('''
                                     INSERT OR IGNORE INTO settings
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                    (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
+                                     islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit,
+                                     max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                                 ''', (
                         data['name'],
                         0,
@@ -159,6 +162,7 @@ class MQTTHandler:
                         None,
                         "yolo",
                         None,
+                        "display",
                         True
                     ))
 
