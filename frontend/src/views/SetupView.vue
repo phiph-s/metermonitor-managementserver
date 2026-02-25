@@ -214,7 +214,7 @@ watch(templateId, async (next) => {
   } else {
     templateDigitQuads.value = [];
   }
-});
+}, { immediate: true });
 
 watch(
   () => [roiExtractor.value, segmentMode.value],

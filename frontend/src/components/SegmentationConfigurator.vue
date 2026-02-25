@@ -177,7 +177,7 @@
       </n-tooltip>
     </n-flex>
     <template #action v-if="evaluation">
-      <n-flex justify="space-around" :size="[0,0]">
+      <n-flex justify="space-around" :size="[0,0]" v-if="evaluation['colored_digits']">
         <div v-for="[index, base64] in evaluation['colored_digits'].entries()" :key="base64" style="text-align: center;">
           <img :style="`width:calc(350px / ${evaluation['colored_digits'].length});`" class="digit"  :src="'data:image/png;base64,' + base64" alt="D"/><br>
           <n-flex justify="center" style="position: relative; top: -10px;">
@@ -200,7 +200,7 @@
 </template>
 
 <script setup>
-import {NCard, NFlex, NInputNumber, NSwitch, NDivider, NButton, NTooltip, NAlert, NSpin, NIcon} from 'naive-ui';
+import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon} from 'naive-ui';
 import {defineProps, defineEmits, computed} from 'vue';
 import {
   AddCircleOutlineOutlined,

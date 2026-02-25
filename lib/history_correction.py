@@ -41,6 +41,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         second_row = rows[1] if len(rows) > 1 else None
 
         last_value = str(row[0]).zfill(segments)
+        if len(last_value) > segments:
+            last_value = last_value[-segments:]
         last_time = datetime.fromisoformat(row[1])
         last_confidence = row[2]
         try:
@@ -198,6 +200,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                 elif allow_negative_correction:
                     if second_row:
                         pre_last_value = str(second_row[0]).zfill(segments)
+                        if len(pre_last_value) > segments:
+                            pre_last_value = pre_last_value[-segments:]
                         # if last history entry has a very low confidence, but current confidence is high enough
                         # compare with the second last entry
                         if last_confidence < 0.2 and tempConfidence > 0.50 and \
