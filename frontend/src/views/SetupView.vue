@@ -3,12 +3,12 @@
   <n-h2>Setup for {{ id }}</n-h2>
   <n-steps :current="currentlyFocusedStep" :vertical="narrowScreen">
     <n-step
-      title="Segmentation"
+      title="Digit Extraction"
       style="max-width: 500px; cursor: pointer;"
       @click="() => {if (currentlyFocusedStep !== 1 && currentStep > 0) {currentlyFocusedStep = 1;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 1) || (!narrowScreen)">
-        <div @click.stop>
+        <div @click.stop class="segmentation-panel">
         <SegmentationConfigurator
             :last-picture="lastPicture"
             :extended-last-digit="extendedLastDigit"
@@ -55,7 +55,7 @@
       </div>
     </n-step>
     <n-step
-      title="Threshold Extraction"
+      title="Digit Isolation"
       style="max-width: 500px; cursor: pointer;"
       @click="() => {if (currentlyFocusedStep !== 2  && currentStep > 1) {currentlyFocusedStep = 2;}}"
     >
@@ -99,7 +99,7 @@
       </div>
     </n-step>
     <n-step
-      title="Evaluation Preview"
+      title="Evaluation Settings"
       v-if="lastPicture"
       style="max-width: 500px; cursor: pointer;"
       @click="() => {if (currentlyFocusedStep !== 3 && currentStep > 2) {currentlyFocusedStep = 3;}}"
@@ -283,4 +283,8 @@ watch(loading, (next) => {
 </script>
 
 <style scoped>
+.segmentation-panel {
+  width: 100%;
+  max-width: 500px;
+}
 </style>

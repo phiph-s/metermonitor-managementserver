@@ -1,6 +1,33 @@
 <template>
   <n-card>
     <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Base Settings</span><span style="opacity: 0.7"> - change immediately</span>
+      </div>
+    </template>
+    <br>
+    <n-flex justify="space-between" align="center">
+     <n-tooltip>
+        <template #trigger>
+          Number of Digits
+        </template>
+        <span>Number of segments (2-10)</span>
+      </n-tooltip>
+      <n-input-number
+        :value="segments"
+        @update:value="handleUpdate('segments', $event)"
+        :max="10"
+        :min="2"
+        :disabled="loading">
+      </n-input-number>
+    </n-flex>
+
+  </n-card><br>
+  <n-card>
+    <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Extract</span><span style="opacity: 0.7"> all digits</span>
+      </div>
       <div class="image-container">
         <TemplatePointEditor
           v-if="isTemplateExtractor && lastPicture && segmentModeValue === 'display'"
@@ -49,9 +76,78 @@
       @update:value="handleUpdate('roiExtractor', $event)"
       @save-template="emits('saveTemplate')"
     />
+    <template v-if="isTemplateExtractor" >
+      <br>
+      <n-flex align="center" :size="8" class="padd">
+        <n-switch
+          :value="segmentModeValue"
+          :checked-value="'each_digit'"
+          :unchecked-value="'display'"
+          @update:value="handleUpdate('segmentMode', $event)"
+          :disabled="loading"
+        >
+          <template #icon>
+            <n-icon size="16"><GridViewOutlined /></n-icon>
+          </template>
+        </n-switch>
+        <n-tooltip>
+          <template #trigger>
+            <span class="tooltip-trigger">
+              <span>Segmentation mode: <b>{{ segmentModeValue === 'each_digit' ? 'Each digit' : 'Display (auto)' }}</b></span>
+            </span>
+          </template>
+          <span>Display: select one large region.<br>Each digit: select one quad per digit.</span>
+        </n-tooltip>
+      </n-flex>
+    </template>
+    <div v-if="!isEachDigitMode">
+      <br>
+      <n-flex align="center" :size="8" class="padd">
+        <n-switch
+          :value="extendedLastDigit"
+          @update:value="handleUpdate('extendedLastDigit', $event)"
+          :disabled="loading || isEachDigitMode"
+        >
+          <template #icon>
+            <n-icon size="16"><AddCircleOutlineOutlined /></n-icon>
+          </template>
+        </n-switch>
+        <n-tooltip>
+          <template #trigger>
+            <span class="tooltip-trigger">
+              <span>Extended last digit</span>
+            </span>
+          </template>
+          <span>Enable if the last digits display is bigger<br>compared to the other digits</span>
+        </n-tooltip>
+      </n-flex>
+      <n-flex align="center" :size="8" class="padd">
+        <n-switch
+          :value="last3DigitsNarrow"
+          @update:value="handleUpdate('last3DigitsNarrow', $event)"
+          :disabled="loading || isEachDigitMode"
+        >
+          <template #icon>
+            <n-icon size="16"><CompressOutlined /></n-icon>
+          </template>
+        </n-switch>
+        <n-tooltip>
+          <template #trigger>
+            <span class="tooltip-trigger">
+              <span>Last 3 digits are narrow</span>
+            </span>
+          </template>
+          <span>Enable if the last three digits displays are narrower<br>compared to the other digits</span>
+        </n-tooltip>
+      </n-flex>
+    </div>
   </n-card><br>
   <n-card>
-
+    <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Post-processing</span><span style="opacity: 0.7"> & Preview</span>
+      </div>
+    </template><br>
     <n-alert v-if="noBoundingBox && !isTemplateExtractor" title="No bounding box found" type="warning" style="margin-bottom: 15px;">
       Without a bounding box the segmentation will not work. Adjust the camera angle or lighting and try again.
     </n-alert>
@@ -59,70 +155,6 @@
       {{ reevaluateError }}
     </n-alert>
 
-    <n-flex v-if="isTemplateExtractor" align="center" :size="8" class="padd">
-      <n-switch
-        :value="segmentModeValue"
-        :checked-value="'each_digit'"
-        :unchecked-value="'display'"
-        @update:value="handleUpdate('segmentMode', $event)"
-        :disabled="loading"
-      />
-      <n-tooltip>
-        <template #trigger>
-          <span class="tooltip-trigger">
-            <n-icon size="16"><GridViewOutlined /></n-icon>
-            <span>Segmentation mode: {{ segmentModeValue === 'each_digit' ? 'Each digit' : 'Display' }}</span>
-          </span>
-        </template>
-        <span>Display: select one large region.<br>Each digit: select one quad per digit.</span>
-      </n-tooltip>
-    </n-flex>
-
-    <n-tooltip>
-      <template #trigger>
-        Segments
-      </template>
-      <span>Number of segments (2-10)</span>
-    </n-tooltip>
-    <n-input-number
-      :value="segments"
-      @update:value="handleUpdate('segments', $event)"
-      :max="10"
-      :min="2"
-      :disabled="loading">
-    </n-input-number><br>
-    <n-flex align="center" :size="8" class="padd">
-      <n-switch
-        :value="extendedLastDigit"
-        @update:value="handleUpdate('extendedLastDigit', $event)"
-        :disabled="loading || isEachDigitMode"
-      />
-      <n-tooltip>
-        <template #trigger>
-          <span class="tooltip-trigger">
-            <n-icon size="16"><AddCircleOutlineOutlined /></n-icon>
-            <span>Extended last digit</span>
-          </span>
-        </template>
-        <span>Enable if the last digits display is bigger<br>compared to the other digits</span>
-      </n-tooltip>
-    </n-flex>
-    <n-flex align="center" :size="8" class="padd">
-      <n-switch
-        :value="last3DigitsNarrow"
-        @update:value="handleUpdate('last3DigitsNarrow', $event)"
-        :disabled="loading || isEachDigitMode"
-      />
-      <n-tooltip>
-        <template #trigger>
-          <span class="tooltip-trigger">
-            <n-icon size="16"><CompressOutlined /></n-icon>
-            <span>Last 3 digits are narrow</span>
-          </span>
-        </template>
-        <span>Enable if the last three digits displays are narrower<br>compared to the other digits</span>
-      </n-tooltip>
-    </n-flex>
     <n-flex align="center" :size="8">
       <n-switch
         :value="rotated180"
@@ -207,16 +239,15 @@ const formattedTimestamp = computed(() => {
 
 const extractorOptions = [
   { label: 'AUTO - Use the YOLOv11 AI-model', value: 'yolo' },
-  { label: 'BYPASS - Directly segment received images', value: 'bypass' },
-  { label: 'ORB - (Very fast) Template-based extractor', value: 'orb' },
-  { label: 'STATIC RECT - Fixed rectangle (no alignment)', value: 'static_rect' }
+  { label: 'BYPASS - Use whole image', value: 'bypass' },
+  { label: 'ORB - Feature-aligning extractor', value: 'orb' },
+  { label: 'STATIC RECT - Fixed rectangle', value: 'static_rect' }
 ];
 
 const currentExtractor = computed(() => props.roiExtractor || 'yolo');
 const isTemplateExtractor = computed(() => ['orb', 'static_rect'].includes(currentExtractor.value));
 const segmentModeValue = computed(() => props.segmentMode || 'display');
 const isEachDigitMode = computed(() => segmentModeValue.value === 'each_digit');
-const hasTemplatePoints = computed(() => Array.isArray(props.templatePoints) && props.templatePoints.length === 4);
 
 const handleUpdate = (field, value) => {
   emits('update', {
@@ -254,6 +285,13 @@ const handleUpdate = (field, value) => {
   border-radius: 4px;
   font-size: 12px;
   backdrop-filter: blur(4px);
+}
+
+.card-title{
+  text-transform: uppercase;
+  width:100%;
+  background-color: rgba(125, 125, 125, 0.1);
+  text-align: center;
 }
 
 .recapture-button {
