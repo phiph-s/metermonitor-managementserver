@@ -2,7 +2,15 @@
   <template v-if="isMobile">
     <n-tabs type="line" animated>
       <n-tab-pane name="details" tab="Details">
+        <div v-if="loading" class="meter-skeleton">
+          <n-skeleton height="32px" width="55%" />
+          <n-skeleton class="skeleton-image" />
+          <n-skeleton height="16px" width="80%" />
+          <n-skeleton height="16px" width="70%" />
+          <n-skeleton height="16px" width="60%" />
+        </div>
         <MeterDetails
+          v-else
           :data="data"
           :settings="settings"
           :id="id"
@@ -17,7 +25,15 @@
         />
       </n-tab-pane>
       <n-tab-pane name="evaluations" tab="Evaluations">
-        <div style="padding-left: 10px; padding-right: 10px;" v-if="evaluations !== null">
+        <div v-if="loading" class="evaluations-skeleton">
+          <n-skeleton height="20px" width="40%" />
+          <div v-for="i in 4" :key="i" class="evaluations-skeleton-card">
+            <n-skeleton height="16px" width="30%" />
+            <n-skeleton height="12px" width="90%" />
+            <n-skeleton height="12px" width="75%" />
+          </div>
+        </div>
+        <div v-else-if="evaluations !== null" style="padding-left: 10px; padding-right: 10px;">
           <EvaluationResultList :evaluations="evaluations" :name="id" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
         </div>
       </n-tab-pane>
@@ -28,7 +44,15 @@
     <div class="meter-layout">
       <aside class="meter-sidebar">
         <div class="sidebar-content">
+          <div v-if="loading" class="meter-skeleton">
+            <n-skeleton height="32px" width="55%" />
+            <n-skeleton class="skeleton-image" />
+            <n-skeleton height="16px" width="80%" />
+            <n-skeleton height="16px" width="70%" />
+            <n-skeleton height="16px" width="60%" />
+          </div>
           <MeterDetails
+            v-else
             :data="data"
             :settings="settings"
             :id="id"
@@ -43,7 +67,17 @@
           />
         </div>
       </aside>
-      <main class="meter-content" v-if="evaluations !== null">
+      <main class="meter-content" v-if="loading">
+        <div class="evaluations-skeleton">
+          <n-skeleton height="20px" width="40%" />
+          <div v-for="i in 6" :key="i" class="evaluations-skeleton-card">
+            <n-skeleton height="16px" width="30%" />
+            <n-skeleton height="12px" width="90%" />
+            <n-skeleton height="12px" width="75%" />
+          </div>
+        </div>
+      </main>
+      <main class="meter-content" v-else-if="evaluations !== null">
         <EvaluationResultList :evaluations="evaluations" :name="id" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
       </main>
     </div>
@@ -56,14 +90,13 @@ import { useRoute } from 'vue-router';
 import router from '@/router';
 import EvaluationResultList from "@/components/EvaluationResultList.vue";
 import MeterDetails from "@/components/MeterDetails.vue";
-import MeterCharts from "@/components/MeterCharts.vue";
-import { NTabs, NTabPane, useMessage } from "naive-ui";
+import { NSkeleton, NTabs, NTabPane, useMessage } from "naive-ui";
 import { useWatermeterStore } from '@/stores/watermeterStore';
 import { storeToRefs } from 'pinia';
 import { useHeaderControls } from '@/composables/headerControls';
 
 const route = useRoute();
-const id = route.params.id;
+const id = computed(() => route.params.id);
 const store = useWatermeterStore();
 const { lastPicture: data, evaluations, history, settings } = storeToRefs(store);
 
@@ -78,7 +111,6 @@ const updateWidth = () => {
 
 onMounted(() => {
   window.addEventListener('resize', updateWidth);
-  loadMeter();
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
@@ -105,7 +137,8 @@ const host = import.meta.env.VITE_HOST;
 const loadMeter = async () => {
   loading.value = true;
   try {
-    await store.fetchAll(id);
+    store.resetMeterData();
+    await store.fetchAll(id.value);
   } catch (e) {
     if (e.response && e.response.status === 401) {
       router.push({ path: '/unlock' });
@@ -114,14 +147,22 @@ const loadMeter = async () => {
   loading.value = false;
 };
 
+watch(
+  () => route.params.id,
+  () => {
+    loadMeter();
+  },
+  { immediate: true }
+);
+
 const loadMoreEvaluations = async () => {
   if (!evaluations.value || evaluations.value.length === 0) return;
   const lastId = evaluations.value[evaluations.value.length - 1].id;
-  await store.fetchEvaluations(id, 10, lastId);
+  await store.fetchEvaluations(id.value, 10, lastId);
 };
 
 const deleteMeter = async () => {
-  let response = await fetch(host + 'api/watermeters/' + id, {
+  let response = await fetch(host + 'api/watermeters/' + id.value, {
     method: 'DELETE',
     headers: { secret: localStorage.getItem('secret') }
   });
@@ -133,12 +174,12 @@ const deleteMeter = async () => {
 };
 
 const resetToSetup = async () => {
-  let response = await fetch(host + 'api/setup/' + id + '/enable', {
+  let response = await fetch(host + 'api/setup/' + id.value + '/enable', {
     method: 'POST',
     headers: { secret: localStorage.getItem('secret') }
   });
   if (response.status === 200) {
-    router.replace({ path: '/setup/' + id });
+    router.replace({ path: '/setup/' + id.value });
   } else {
     console.log('Error resetting meter');
   }
@@ -177,7 +218,7 @@ const triggerCapture = async () => {
 const downloadDataset = async () => {
   downloadingDataset.value = true;
   try {
-    const response = await fetch(host + 'api/dataset/' + id + '/download', {
+    const response = await fetch(host + 'api/dataset/' + id.value + '/download', {
       headers: { secret: localStorage.getItem('secret') }
     });
 
@@ -186,7 +227,7 @@ const downloadDataset = async () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${id}_dataset.zip`;
+      a.download = `${id.value}_dataset.zip`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -203,7 +244,7 @@ const downloadDataset = async () => {
 
 const deleteDataset = async () => {
   try {
-    const response = await fetch(host + 'api/dataset/' + id, {
+    const response = await fetch(host + 'api/dataset/' + id.value, {
       method: 'DELETE',
       headers: { secret: localStorage.getItem('secret') }
     });
@@ -221,7 +262,7 @@ const deleteDataset = async () => {
 
 const clearEvaluations = async () => {
   try {
-    const response = await fetch(host + 'api/watermeters/' + id + '/evals', {
+    const response = await fetch(host + 'api/watermeters/' + id.value + '/evals', {
       method: 'DELETE',
       headers: { secret: localStorage.getItem('secret') }
     });
@@ -231,7 +272,7 @@ const clearEvaluations = async () => {
       console.log(`Cleared ${result.count} evaluations`);
 
       // Re-evaluate latest picture to restore state
-      await fetch(host + 'api/watermeters/' + id + '/evaluations/reevaluate', {
+      await fetch(host + 'api/watermeters/' + id.value + '/evaluations/reevaluate', {
         method: 'POST',
         headers: { secret: localStorage.getItem('secret') }
       });
@@ -278,8 +319,41 @@ const clearEvaluations = async () => {
   height: calc(100vh - 104px);
 }
 
+.meter-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.skeleton-image {
+  height: 220px;
+  width: 100%;
+  border-radius: 12px;
+}
+
+.evaluations-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+}
+
+.evaluations-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .light-mode .meter-sidebar {
   background: rgba(0, 0, 0, 0.04);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.light-mode .evaluations-skeleton-card {
+  background: rgba(0, 0, 0, 0.04);
 }
 </style>

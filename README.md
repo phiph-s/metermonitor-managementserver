@@ -54,8 +54,14 @@
 
 ---
 
-This project is heavily inspired by [the AI-on-the-edge project](https://github.com/jomjol/AI-on-the-edge-device) and is trained on the dataset by the user [haverland](https://github.com/haverland/collectmeterdigits).
+This project is heavily inspired by [the AI-on-the-edge project](https://github.com/jomjol/AI-on-the-edge-device) and the rolling digit classifier is trained on the dataset by the user [haverland](https://github.com/haverland/collectmeterdigits) (Apache License).
 
+Two open-source datasets from [Roboflow Universe](https://universe.roboflow.com), merged and preprocessed (for 7 segment displays):
+
+| Dataset | Author | License |
+|---|---|--|
+| [7-segment digit number & display](https://universe.roboflow.com/labmonitor/7-segment-digit-number-display) v1 | labmonitor | CC BY 4.0 |
+| [7-seven-segment-old](https://universe.roboflow.com/deep-j6koa/7-seven-segment-old) v2 | deep-j6koa | CC BY 4.0 |
 
 ## 🏠 Home Assistant Setup (Recommended)
 

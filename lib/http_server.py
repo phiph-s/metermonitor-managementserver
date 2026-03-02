@@ -110,6 +110,7 @@ def prepare_setup_app(config, lifespan):
         roi_extractor: Optional[str] = None
         template_id: Optional[str] = None
         segment_mode: Optional[str] = None
+        digit_models: Optional[List[str]] = None
         use_correctional_alg: Optional[bool] = True
 
     class CaptureNowRequest(BaseModel):
@@ -135,6 +136,7 @@ def prepare_setup_app(config, lifespan):
         roi_extractor: Optional[str] = None
         template_id: Optional[str] = None
         segment_mode: Optional[str] = None
+        digit_models: Optional[List[str]] = None
         use_correctional_alg: Optional[bool] = True
 
     class TemplateCreateRequest(BaseModel):
@@ -822,20 +824,27 @@ def prepare_setup_app(config, lifespan):
         db.row_factory = sqlite3.Row
         cur = db.cursor()
         cur.execute(
-            "SELECT name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg "
+            "SELECT name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg "
             "FROM settings ORDER BY name"
         )
         out = [dict(row) for row in cur.fetchall()]
+        for row in out:
+            if row.get("digit_models"):
+                try:
+                    row["digit_models"] = json.loads(row["digit_models"])
+                except Exception:
+                    row["digit_models"] = None
         return {"settings": out}
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
     def create_settings(payload: SettingsRequest):
         db = db_connection()
         cur = db.cursor()
+        digit_models = json.dumps(payload.digit_models) if payload.digit_models is not None else None
         cur.execute(
-            "INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.name, payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, payload.roi_extractor or "yolo", payload.template_id, payload.segment_mode or "display", 1 if payload.use_correctional_alg else 0),
+            "INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.name, payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, payload.roi_extractor or "yolo", payload.template_id, payload.segment_mode or "display", digit_models, 1 if payload.use_correctional_alg else 0),
         )
         db.commit()
         return {"message": "Settings created"}
@@ -854,10 +863,11 @@ def prepare_setup_app(config, lifespan):
         if roi_extractor not in {"orb", "static_rect"}:
             template_id = None
         segment_mode = payload.segment_mode or "display"
+        digit_models = json.dumps(payload.digit_models) if payload.digit_models is not None else None
 
         cur.execute(
-            "UPDATE settings SET threshold_low = ?, threshold_high = ?, threshold_last_low = ?, threshold_last_high = ?, islanding_padding = ?, segments = ?, rotated_180 = ?, shrink_last_3 = ?, extended_last_digit = ?, max_flow_rate = ?, conf_threshold = ?, roi_extractor = ?, template_id = ?, segment_mode = ?, use_correctional_alg = ? WHERE name = ?",
-            (payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, roi_extractor, template_id, segment_mode, 1 if payload.use_correctional_alg else 0, name),
+            "UPDATE settings SET threshold_low = ?, threshold_high = ?, threshold_last_low = ?, threshold_last_high = ?, islanding_padding = ?, segments = ?, rotated_180 = ?, shrink_last_3 = ?, extended_last_digit = ?, max_flow_rate = ?, conf_threshold = ?, roi_extractor = ?, template_id = ?, segment_mode = ?, digit_models = ?, use_correctional_alg = ? WHERE name = ?",
+            (payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, roi_extractor, template_id, segment_mode, digit_models, 1 if payload.use_correctional_alg else 0, name),
         )
         db.commit()
         return {"message": "Settings updated"}
@@ -1179,11 +1189,17 @@ def prepare_setup_app(config, lifespan):
     def get_settings(name: str):
         cursor = db_connection().cursor()
         cursor.execute(
-            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg FROM settings WHERE name = ?",
+            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg FROM settings WHERE name = ?",
             (name,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Thresholds not found")
+        digit_models = row[14]
+        if digit_models:
+            try:
+                digit_models = json.loads(digit_models)
+            except Exception:
+                digit_models = None
         return {
             "threshold_low": row[0],
             "threshold_high": row[1],
@@ -1199,19 +1215,21 @@ def prepare_setup_app(config, lifespan):
             "roi_extractor": row[11],
             "template_id": row[12],
             "segment_mode": row[13],
-            "use_correctional_alg": row[14]
+            "digit_models": digit_models,
+            "use_correctional_alg": row[15]
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
     def set_settings(settings: SettingsRequest):
         db = db_connection()
         cursor = db.cursor()
+        digit_models = json.dumps(settings.digit_models) if settings.digit_models is not None else None
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1226,12 +1244,13 @@ def prepare_setup_app(config, lifespan):
                                             roi_extractor=excluded.roi_extractor,
                                             template_id=excluded.template_id,
                                             segment_mode=excluded.segment_mode,
+                                            digit_models=excluded.digit_models,
                                             use_correctional_alg=excluded.use_correctional_alg
             """,
             (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, settings.use_correctional_alg)
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}
@@ -1240,12 +1259,13 @@ def prepare_setup_app(config, lifespan):
     def update_settings(name: str, settings: SettingsUpdateRequest):
         db = db_connection()
         cursor = db.cursor()
+        digit_models = json.dumps(settings.digit_models) if settings.digit_models is not None else None
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1260,12 +1280,13 @@ def prepare_setup_app(config, lifespan):
                                             roi_extractor=excluded.roi_extractor,
                                             template_id=excluded.template_id,
                                             segment_mode=excluded.segment_mode,
+                                            digit_models=excluded.digit_models,
                                             use_correctional_alg=excluded.use_correctional_alg
             """,
             (name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, settings.use_correctional_alg)
         )
         db.commit()
         return {"message": "Settings updated", "name": name}

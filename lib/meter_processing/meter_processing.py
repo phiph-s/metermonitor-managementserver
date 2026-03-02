@@ -38,7 +38,13 @@ class MeterPredictor:
 
         # Load digit classifier ONNX model
         self.digit_session = ort.InferenceSession(
-            'models/best_model.onnx',
+            'models/rotating_digit.onnx',
+            sess_options=sess_options,
+            providers=['CPUExecutionProvider']
+        )
+
+        self.segment_session = ort.InferenceSession(
+            'models/segment_digit.onnx',
             sess_options=sess_options,
             providers=['CPUExecutionProvider']
         )
@@ -52,6 +58,8 @@ class MeterPredictor:
 
         self.digit_input_name = self.digit_session.get_inputs()[0].name
         self.digit_output_name = self.digit_session.get_outputs()[0].name
+        self.segment_input_name = self.segment_session.get_inputs()[0].name
+        self.segment_output_name = self.segment_session.get_outputs()[0].name
 
         # Force garbage collection after loading models
         gc.collect()
@@ -103,6 +111,8 @@ class MeterPredictor:
 
         if use_templated_extractor and rotated_180:
             digits = [cv2.rotate(digit, cv2.ROTATE_180) for digit in digits]
+            if segment_mode == "display":
+                digits = list(reversed(digits))
 
         # Adjust brightness of each image
         mean_brightnesses = [np.mean(img) for img in digits]
@@ -213,19 +223,25 @@ class MeterPredictor:
         return img_str, img_norm
 
     # use the classifier to predict the digit, returns the top 3 predictions with their confidence
-    def predict_digit(self, digit):
+    def predict_digit(self, digit, model_type=None):
         # Perform prediction using ONNX model
-        predictions = self.digit_session.run(
-            [self.digit_output_name],
-            {self.digit_input_name: digit}
-        )[0]
+        if model_type == "segment":
+            predictions = self.segment_session.run(
+                [self.segment_output_name],
+                {self.segment_input_name: digit}
+            )[0]
+        else:
+            predictions = self.digit_session.run(
+                [self.digit_output_name],
+                {self.digit_input_name: digit}
+            )[0]
 
         top3 = np.argsort(predictions[0])[-3:][::-1]
         pairs = [(self.class_names[i], float(predictions[0][i])) for i in top3]
 
         return pairs
 
-    def predict_digits(self, digits):
+    def predict_digits(self, digits, model_types=None):
         """
         Digits are np arrays
         predict the digits
@@ -233,7 +249,10 @@ class MeterPredictor:
         # Predict each digit
         predicted_digits = []
         for i,digit in enumerate(digits):
-            digit = self.predict_digit(digit)
+            model_type = None
+            if model_types and i < len(model_types):
+                model_type = model_types[i]
+            digit = self.predict_digit(digit, model_type=model_type)
             predicted_digits.append(digit)
 
         # Clean up memory after batch prediction

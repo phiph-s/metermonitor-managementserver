@@ -10,6 +10,27 @@ import cv2
 from lib.history_correction import correct_value
 from lib.meter_processing.roi_extractors.orb_extractor import ORBExtractor
 
+def _normalize_digit_models(raw_models, digit_count: int):
+    if not raw_models:
+        return ["rotating"] * digit_count
+    if isinstance(raw_models, str):
+        try:
+            parsed = json.loads(raw_models)
+        except Exception:
+            parsed = []
+    else:
+        parsed = raw_models
+    if not isinstance(parsed, list):
+        parsed = []
+    models = []
+    for i in range(digit_count):
+        model = parsed[i] if i < len(parsed) else None
+        if model not in {"rotating", "segment"}:
+            model = "rotating"
+        models.append(model)
+    return models
+
+
 def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: int = None):
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
@@ -65,7 +86,8 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
                               shrink_last_3,
                               extended_last_digit,
                               max_flow_rate,
-                              rotated_180
+                              rotated_180,
+                              digit_models
                        FROM settings
                        WHERE name = ?
                        ''', (name,))
@@ -75,13 +97,15 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
         thresholds = [settings[0], settings[1]]
         thresholds_last = [settings[2], settings[3]]
         islanding_padding = settings[4]
+        digit_models = settings[10] if len(settings) > 10 else None
+        model_types = _normalize_digit_models(digit_models, len(digits))
 
         if len(thresholds) == 0:
             print(f"[Eval ({name})] No thresholds found for {name}")
             return {"error": "No thresholds found"}
         else:
             processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding)
-            prediction = meter_preditor.predict_digits(digits)
+            prediction = meter_preditor.predict_digits(digits, model_types=model_types)
 
         return {
             "processed_images": digits_inverted,
@@ -111,7 +135,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         # Get current settings for the watermeter
         cursor.execute('''
                    SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
-                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, use_correctional_alg
+                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg
                    FROM settings
                    WHERE name = ?
                ''', (name,))
@@ -128,7 +152,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         roi_extractor = settings[11] if settings[11] else "yolo"
         template_id = settings[12] if settings[12] else None
         segment_mode = settings[13] if settings[13] else "display"
-        use_correctional_alg = bool(settings[14]) if settings[14] is not None else True
+        digit_models = settings[14] if len(settings) > 14 else None
+        use_correctional_alg = bool(settings[15]) if settings[15] is not None else True
 
         # Get the target_brightness from the last history entry
         cursor.execute("SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
@@ -183,7 +208,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             print(f"[Eval ({name})] No thresholds found for {name}")
         else:
             processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding)
-            prediction = meter_preditor.predict_digits(digits)
+            model_types = _normalize_digit_models(digit_models, len(digits))
+            prediction = meter_preditor.predict_digits(digits, model_types=model_types)
 
         # check for each digit if its highest conf is above conf_threshold, otherwise mark it as denied
         denied_digits = []

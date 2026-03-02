@@ -36,7 +36,8 @@ class ThresholdOptimizer:
         self,
         colored_digits: List[str],
         islanding_padding: int = 20,
-        steps: int = 10
+        steps: int = 10,
+        digit_models: Optional[List[str]] = None
     ) -> dict:
         """
         Search for optimal threshold values using grid search.
@@ -85,17 +86,21 @@ class ThresholdOptimizer:
         }
 
         # Search main threshold (for non-last-3 digits)
+        main_models = digit_models[:-3] if digit_models and len(digit_images) > 3 else None
         best_main = self._search_threshold_range(
             digit_images[:-3] if len(digit_images) > 3 else [],
             threshold_values,
-            islanding_padding
+            islanding_padding,
+            model_types=main_models
         )
 
         # Search last-3 threshold
+        last_models = digit_models[-3:] if digit_models and len(digit_images) >= 3 else digit_models
         best_last = self._search_threshold_range(
             digit_images[-3:] if len(digit_images) >= 3 else digit_images,
             threshold_values,
-            islanding_padding
+            islanding_padding,
+            model_types=last_models
         )
 
         # Phase 2: Refinement around best values
@@ -104,7 +109,8 @@ class ThresholdOptimizer:
                 digit_images[:-3] if len(digit_images) > 3 else [],
                 best_main["threshold"],
                 islanding_padding,
-                refinement_range=step_size
+                refinement_range=step_size,
+                model_types=main_models
             )
             if refined_main["confidence"] > best_main["confidence"]:
                 best_main = refined_main
@@ -113,7 +119,8 @@ class ThresholdOptimizer:
                 digit_images[-3:] if len(digit_images) >= 3 else digit_images,
                 best_last["threshold"],
                 islanding_padding,
-                refinement_range=step_size
+                refinement_range=step_size,
+                model_types=last_models
             )
             if refined_last["confidence"] > best_last["confidence"]:
                 best_last = refined_last
@@ -123,7 +130,8 @@ class ThresholdOptimizer:
             digit_images,
             best_main["threshold"],
             best_last["threshold"],
-            islanding_padding
+            islanding_padding,
+            model_types=digit_models
         )
 
         return {
@@ -159,7 +167,8 @@ class ThresholdOptimizer:
         self,
         digit_images: List[np.ndarray],
         threshold_values: List[int],
-        islanding_padding: int
+        islanding_padding: int,
+        model_types: Optional[List[str]] = None
     ) -> dict:
         """
         Search for optimal threshold in given range.
@@ -179,7 +188,7 @@ class ThresholdOptimizer:
                     continue
 
                 confidence = self._evaluate_threshold_on_digits(
-                    digit_images, [low, high], islanding_padding
+                    digit_images, [low, high], islanding_padding, model_types=model_types
                 )
 
                 if confidence > best_confidence:
@@ -193,7 +202,8 @@ class ThresholdOptimizer:
         digit_images: List[np.ndarray],
         initial_threshold: List[int],
         islanding_padding: int,
-        refinement_range: int = 20
+        refinement_range: int = 20,
+        model_types: Optional[List[str]] = None
     ) -> dict:
         """Refine threshold around initial values with finer steps."""
         if not digit_images:
@@ -201,7 +211,7 @@ class ThresholdOptimizer:
 
         best_threshold = initial_threshold.copy()
         best_confidence = self._evaluate_threshold_on_digits(
-            digit_images, initial_threshold, islanding_padding
+            digit_images, initial_threshold, islanding_padding, model_types=model_types
         )
 
         low_start = max(0, initial_threshold[0] - refinement_range)
@@ -217,7 +227,7 @@ class ThresholdOptimizer:
                     continue
 
                 confidence = self._evaluate_threshold_on_digits(
-                    digit_images, [low, high], islanding_padding
+                    digit_images, [low, high], islanding_padding, model_types=model_types
                 )
 
                 if confidence > best_confidence:
@@ -230,7 +240,8 @@ class ThresholdOptimizer:
         self,
         digit_images: List[np.ndarray],
         threshold: List[int],
-        islanding_padding: int
+        islanding_padding: int,
+        model_types: Optional[List[str]] = None
     ) -> float:
         """
         Evaluate a threshold combination on a set of digit images.
@@ -243,7 +254,7 @@ class ThresholdOptimizer:
         total_confidence = 0.0
         valid_count = 0
 
-        for digit_img in digit_images:
+        for idx, digit_img in enumerate(digit_images):
             try:
                 _, processed_digit = self.meter_predictor.apply_threshold(
                     digit_img,
@@ -254,7 +265,10 @@ class ThresholdOptimizer:
                 )
 
                 # Get prediction with confidence
-                predictions = self.meter_predictor.predict_digit(processed_digit)
+                model_type = None
+                if model_types and idx < len(model_types):
+                    model_type = model_types[idx]
+                predictions = self.meter_predictor.predict_digit(processed_digit, model_type=model_type)
 
                 if predictions:
                     top_prediction, top_confidence = predictions[0]
@@ -279,7 +293,8 @@ class ThresholdOptimizer:
         digit_images: List[np.ndarray],
         main_threshold: List[int],
         last_threshold: List[int],
-        islanding_padding: int
+        islanding_padding: int,
+        model_types: Optional[List[str]] = None
     ) -> dict:
         """
         Evaluate combined thresholds on all digits.
@@ -308,7 +323,10 @@ class ThresholdOptimizer:
                     invert=False
                 )
 
-                predictions = self.meter_predictor.predict_digit(processed_digit)
+                model_type = None
+                if model_types and i < len(model_types):
+                    model_type = model_types[i]
+                predictions = self.meter_predictor.predict_digit(processed_digit, model_type=model_type)
 
                 if predictions:
                     top_prediction, top_confidence = predictions[0]
@@ -370,18 +388,25 @@ def search_thresholds_for_meter(
 
         # Get current islanding_padding from settings
         cursor.execute(
-            "SELECT islanding_padding FROM settings WHERE name = ?",
+            "SELECT islanding_padding, digit_models FROM settings WHERE name = ?",
             (name,)
         )
         settings_row = cursor.fetchone()
         islanding_padding = settings_row[0] if settings_row else 20
+        digit_models = None
+        if settings_row and len(settings_row) > 1 and settings_row[1]:
+            try:
+                digit_models = json.loads(settings_row[1])
+            except Exception:
+                digit_models = None
 
         # Run optimization
         optimizer = ThresholdOptimizer(meter_predictor)
         result = optimizer.search_optimal_thresholds(
             colored_digits,
             islanding_padding=islanding_padding,
-            steps=steps
+            steps=steps,
+            digit_models=digit_models
         )
 
         return result

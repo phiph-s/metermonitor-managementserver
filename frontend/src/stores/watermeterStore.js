@@ -10,7 +10,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
   const history = ref(null);
   const source = ref(null);
   const capturing = ref(false);
-  const settings = reactive({
+  const defaultSettings = {
     threshold_low: 0,
     threshold_high: 125,
     threshold_last_low: 0,
@@ -25,7 +25,11 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     roi_extractor: 'yolo',
     template_id: null,
     segment_mode: 'display',
-  });
+    use_correctional_alg: false,
+    digit_models: null,
+  };
+
+  const settings = reactive({ ...defaultSettings });
 
   // Actions
   const fetchWatermeter = async (meterId) => {
@@ -78,7 +82,8 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       roi_extractor: data.roi_extractor || 'yolo',
       template_id: data.template_id || null,
       segment_mode: data.segment_mode || 'display',
-      use_correctional_alg: data.use_correctional_alg === 1 || data.use_correctional_alg === true
+      use_correctional_alg: data.use_correctional_alg === 1 || data.use_correctional_alg === true,
+      digit_models: Array.isArray(data.digit_models) ? data.digit_models : null
     });
 
     return data;
@@ -101,6 +106,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       template_id: settings.template_id,
       segment_mode: settings.segment_mode,
       use_correctional_alg: settings.use_correctional_alg,
+      digit_models: settings.digit_models,
     };
 
     await apiService.put(`api/watermeters/${meterId}/settings`, payload);
@@ -111,6 +117,15 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     const meterSource = data.sources.find(s => s.name === meterId);
     source.value = meterSource || null;
     return meterSource;
+  };
+
+  const resetMeterData = () => {
+    lastPicture.value = null;
+    evaluations.value = null;
+    evaluation.value = null;
+    history.value = null;
+    source.value = null;
+    Object.assign(settings, defaultSettings);
   };
 
   const fetchAll = async (meterId) => {
@@ -140,5 +155,6 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     updateSettings,
     fetchSource,
     fetchAll,
+    resetMeterData,
   };
 });

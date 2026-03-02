@@ -2,7 +2,7 @@ v3.3.0 - 06.02.2026
 - Added E2E tests and Python unit-tests
 - Fixed static extractor
 
-v3.2.x - 02.02.2026
+v3.2.0 - 02.02.2026
 - Fixed non-MQTT sources (HTTP, Home Assistant Camera) not publishing meter values to MQTT broker
   - Added dedicated MQTT publisher client for polling/capture operations
   - HTTP and HA Camera sources now publish both discovery registration and meter values

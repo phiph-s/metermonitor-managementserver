@@ -68,10 +68,12 @@
               :threshold_last="thresholdLast"
               :islanding_padding="islandingPadding"
               :segments="segments"
+              :digit-models="digitModels"
               :loading="loading"
               :searching-thresholds="searchingThresholds"
               :threshold-search-result="thresholdSearchResult"
               @update="(data) => setupStore.updateThresholds(data, id)"
+              @update-digit-models="(models) => setupStore.updateDigitModels(models, id)"
               @reevaluate="() => setupStore.redoDigitEval(id) && setupStore.clearEvaluationExamples(id)"
               @next="() =>  {setupStore.nextStep(2); currentlyFocusedStep = 3}"
               @search-thresholds="(steps) => setupStore.searchThresholds(id, steps)"
@@ -190,6 +192,7 @@ const isTemplateExtractor = (value) => ['orb', 'static_rect'].includes(value);
 const maxFlowRate = computed(() => settings.value?.max_flow_rate || 0);
 const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
+const digitModels = computed(() => settings.value?.digit_models || null);
 
 const templatePoints = ref([]);
 const templateDigitQuads = ref([]);

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg:svg
+   width="192"
+   height="320"
+   viewBox="-1 -1 12 20"
+   stroke="#FFF"
+   stroke-width=".25"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="7-segment_abcdefg.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <svg:defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.725"
+     inkscape:cx="95.973154"
+     inkscape:cy="160"
+     inkscape:window-width="2560"
+     inkscape:window-height="1403"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <svg:polygon
+     id="a"
+     fill="#F00"
+     points="1, 1  2, 0  8, 0  9, 1  8, 2  2, 2"
+     style="fill:#000000" />
+  <svg:polygon
+     id="b"
+     fill="#F00"
+     points="9, 1 10, 2 10, 8  9, 9  8, 8  8, 2"
+     style="fill:#000000" />
+  <svg:polygon
+     id="c"
+     fill="#F00"
+     points="9, 9 10,10 10,16  9,17  8,16  8,10"
+     style="fill:#000000" />
+  <svg:polygon
+     id="d"
+     fill="#F00"
+     points="9,17  8,18  2,18  1,17  2,16  8,16"
+     style="fill:#000000" />
+  <svg:polygon
+     id="e"
+     fill="#F00"
+     points="1,17  0,16  0,10  1, 9  2,10  2,16"
+     style="fill:#000000" />
+  <svg:polygon
+     id="f"
+     fill="#F00"
+     points="1, 9  0, 8  0, 2  1, 1  2, 2  2, 8"
+     style="fill:#000000" />
+  <svg:polygon
+     id="g"
+     fill="#F00"
+     points="1, 9  2, 8  8, 8  9, 9  8,10  2,10"
+     style="fill:#000000" />
+  <script />
+</svg:svg>
