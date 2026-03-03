@@ -1,0 +1,29 @@
+{
+  "max_history": 200,
+  "max_evals": 100,
+  "mqtt": {
+    "broker": "127.0.0.1",
+    "port": 1889,
+    "topic": "MeterMonitor/#",
+    "username": null,
+    "password": null
+  },
+  "ingress": false,
+  "allow_negative_correction": true,
+  "enable_auth": true,
+  "secret_key": "test_token",
+  "http": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8070
+  },
+  "dbfile": "data/e2e-watermeters.sqlite",
+  "output_dataset": "data/output_dataset_e2e",
+  "publish_to": "MeterMonitor/{device}/",
+  "homeassistant": {
+    "use_supervisor_token": false,
+    "url": "http://127.0.0.1:1888",
+    "token": "test-token",
+    "request_timeout_s": 2
+  }
+}
