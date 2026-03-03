@@ -164,8 +164,7 @@ const setupMeter = async (page, name) => {
   await expect(page.getByText(`Setup for ${name}`)).toBeVisible({ timeout: 60000 });
 
   const segmentsInput = page
-    .getByText('Segments')
-    .locator('..')
+    .getByTestId('segments-input')
     .locator('.n-input__input-el')
     .first();
   await segmentsInput.fill('7');
@@ -206,6 +205,7 @@ const setupMeter = async (page, name) => {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('secret', 'test_token');
+    localStorage.setItem('whats_new_seen', '4.0');
   });
 });
 

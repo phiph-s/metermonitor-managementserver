@@ -236,9 +236,14 @@ def prepare_setup_app(config, lifespan):
 
             cur.execute('''
                            INSERT OR IGNORE INTO settings
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
+                            islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit,
+                            max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode,
+                            digit_models, decimals, use_correctional_alg)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ''', (
-                               meter_name,0,125,0,125,20,7,False,False,False,1.0,None,"yolo",None,"display",True
+                               meter_name, 0, 125, 0, 125, 20, 7, False, False, False,
+                               1.0, None, 'yolo', None, 'display', None, 3, True
                            ))
 
     def _normalize_source_type(source_type: str) -> str:

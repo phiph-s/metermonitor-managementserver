@@ -10,7 +10,7 @@ import unittest
 import cv2
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -22,7 +22,7 @@ from lib.history_correction import correct_value
 class TestFullPipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         img_path = root / "test" / "img" / "img.png"
         reference = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
         if reference is None:

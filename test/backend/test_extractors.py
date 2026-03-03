@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -58,7 +58,7 @@ class TestExtractors(unittest.TestCase):
         self.assertEqual(bbox_img.size, (640, 480))
 
     def test_orb_extractor_extracts_roi(self):
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         img_path = root / "test" / "img" / "img.png"
         reference = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
         self.assertIsNotNone(reference)
@@ -92,7 +92,7 @@ class TestExtractors(unittest.TestCase):
         self.assertIsNotNone(bbox)
 
     def test_orb_serialization_roundtrip(self):
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         img_path = root / "test" / "img" / "img.png"
         reference = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
         self.assertIsNotNone(reference)

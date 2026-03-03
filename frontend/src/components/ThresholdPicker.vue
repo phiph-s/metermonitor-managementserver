@@ -41,7 +41,8 @@
       ✓ Found: Confidence {{ (thresholdSearchResult.avg_confidence * 100).toFixed(1) }}%
     </div>
 
-    <n-flex :size="[0,0]" justify="space-around" align="center">
+    <div class="threshold-scroll">
+    <n-flex :size="[0,0]" justify="space-around" align="center" style="flex-wrap: nowrap; min-width: min-content;">
       <div>
         <n-flex justify="space-around" size="small" v-if="evaluation">
           <img :style="{ width: digitWidth }" class="digit" v-for="[i,base64] in leadingDigits.entries()" :src="'data:image/png;base64,' + base64" :key="i+'a'" alt="D" />
@@ -134,6 +135,7 @@
         </n-flex>
       </div>
     </n-flex>
+    </div>
 
     <n-divider></n-divider>
     Extraction padding
@@ -435,6 +437,10 @@ async function thresholdImage(base64, threshold, islanding_padding = 0) {
 .th {
   border: 1px solid rgba(255, 255, 255, 0.16);
   mix-blend-mode: screen;
+}
+
+.threshold-scroll {
+  overflow-x: auto;
 }
 
 .card-title{

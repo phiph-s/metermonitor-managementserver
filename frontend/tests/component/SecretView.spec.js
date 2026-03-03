@@ -11,8 +11,6 @@ import router from '@/router';
 import SecretView from '@/views/SecretView.vue';
 
 test('stores secret and navigates to root', async () => {
-  localStorage.clear();
-
   const wrapper = mount(SecretView);
   const input = wrapper.find('input');
   const button = wrapper.find('button');

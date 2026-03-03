@@ -14,6 +14,7 @@
         <span>Number of segments (2-10)</span>
       </n-tooltip>
       <n-input-number
+        data-testid="segments-input"
         :value="segments"
         @update:value="handleUpdate('segments', $event)"
         :max="10"
