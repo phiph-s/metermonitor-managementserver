@@ -5,8 +5,20 @@ import fs from 'fs'
 import { execSync } from 'child_process'
 
 const rootConfigPath = path.resolve(__dirname, '../config.json')
-const addonConfig = JSON.parse(fs.readFileSync(rootConfigPath, 'utf-8'))
-const appVersion = addonConfig.version || '0.0.0'
+const frontendPkgPath = path.resolve(__dirname, './package.json')
+
+let appVersion = '0.0.0'
+try {
+  if (fs.existsSync(rootConfigPath)) {
+    const addonConfig = JSON.parse(fs.readFileSync(rootConfigPath, 'utf-8'))
+    appVersion = addonConfig.version || appVersion
+  } else if (fs.existsSync(frontendPkgPath)) {
+    const frontendPkg = JSON.parse(fs.readFileSync(frontendPkgPath, 'utf-8'))
+    appVersion = frontendPkg.version || appVersion
+  }
+} catch (_err) {
+  // Keep default if version metadata can't be read.
+}
 
 let gitCommit = 'unknown'
 let gitBranch = 'unknown'
