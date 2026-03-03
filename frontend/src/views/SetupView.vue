@@ -1,10 +1,10 @@
 <template>
 
   <n-h2>Setup for {{ id }}</n-h2>
-  <n-steps :current="currentlyFocusedStep" :vertical="narrowScreen">
+  <n-steps class="setup-steps" :current="currentlyFocusedStep" :vertical="narrowScreen">
     <n-step
       title="Digit Extraction"
-      style="max-width: 500px; cursor: pointer;"
+      style="max-width: 500px;"
       @click="() => {if (currentlyFocusedStep !== 1 && currentStep > 0) {currentlyFocusedStep = 1;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 1) || (!narrowScreen)">
@@ -46,7 +46,7 @@
     </n-step>
     <n-step
       title="Digit Isolation"
-      style="max-width: 500px; cursor: pointer;"
+      style="max-width: 500px;"
       @click="() => {if (currentlyFocusedStep !== 2  && currentStep > 1) {currentlyFocusedStep = 2;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 2) || (!narrowScreen && currentStep > 1)">
@@ -83,7 +83,7 @@
     <n-step
       title="Evaluation Settings"
       v-if="lastPicture"
-      style="max-width: 500px; cursor: pointer;"
+      style="max-width: 500px;"
       @click="() => {if (currentlyFocusedStep !== 3 && currentStep > 2) {currentlyFocusedStep = 3;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 3) || (!narrowScreen && currentStep > 2)">
@@ -287,5 +287,13 @@ watch(loading, (next) => {
 
 .help-links a:hover {
   text-decoration: underline;
+}
+
+.setup-steps :deep(.n-step) {
+  cursor: default;
+}
+
+.setup-steps :deep(.n-step-header) {
+  cursor: pointer;
 }
 </style>
