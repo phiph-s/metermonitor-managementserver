@@ -42,13 +42,13 @@
           class="prediction google-sans-code"
           v-for="[i, digit] in (last_result + '').padStart(last_digits.length, '0').split('').entries()"
           :key="i + 'd'"
-          :class="{ faded: i > last_digits.length - 4 }"
+          :class="{ faded: isDecimalDigitIndex(i, last_digits.length) }"
         >
-          <template v-if="i === last_digits.length-4">
-            {{ (digit[0][0]==='r')? '↕' : digit[0][0] }},
+          <template v-if="isDecimalSeparatorIndex(i, last_digits.length)">
+            {{ digit }},
           </template>
           <template v-else>
-            {{ (digit[0][0]==='r')? '↕' : digit[0][0] }}
+            {{ digit }}
           </template>
         </span>
         <span class="unit">m³</span>
@@ -112,7 +112,8 @@ const props = defineProps([
     'rssi',
     'last_error',
     'has_bbox',
-    'source_type'
+    'source_type',
+    'decimals'
 ]);
 
 const hasError = computed(() => !!props.last_error);
@@ -220,21 +221,40 @@ const last_updated_locale = computed(() => {
   });
 });
 
+const meterDecimals = computed(() => {
+  const raw = Number.isFinite(props.decimals) ? props.decimals : 3;
+  return Math.max(0, raw);
+});
+
+const meterScale = computed(() => 10 ** meterDecimals.value);
+
+const isDecimalSeparatorIndex = (idx, digitLength) => {
+  const decimals = Math.min(meterDecimals.value, digitLength);
+  if (decimals === 0) return false;
+  return idx === digitLength - decimals - 1;
+};
+
+const isDecimalDigitIndex = (idx, digitLength) => {
+  const decimals = Math.min(meterDecimals.value, digitLength);
+  if (decimals === 0) return false;
+  return idx >= digitLength - decimals;
+};
+
 const firstValue = computed(() => {
   if (historyData.value.length === 0) return '';
-  return (historyData.value[0][0] / 1000).toFixed(1);
+  return (historyData.value[0][0] / meterScale.value).toFixed(Math.min(meterDecimals.value + 1, 4));
 });
 
 const lastValue = computed(() => {
   if (historyData.value.length === 0) return '';
-  return (historyData.value[historyData.value.length - 1][0] / 1000).toFixed(1);
+  return (historyData.value[historyData.value.length - 1][0] / meterScale.value).toFixed(Math.min(meterDecimals.value + 1, 4));
 });
 
 const chartSeries = computed(() => [{
   name: 'Value',
   data: historyData.value.map(item => ({
     x: new Date(item[1]).getTime(),
-    y: item[0] / 1000
+    y: item[0] / meterScale.value
   }))
 }]);
 
@@ -265,7 +285,7 @@ const chartOptions = computed(() => ({
       format: 'dd MMM HH:mm'
     },
     y: {
-      formatter: (val) => val.toFixed(2) + ' m³'
+      formatter: (val) => val.toFixed(Math.min(meterDecimals.value + 1, 4)) + ' m³'
     }
   },
   xaxis: {

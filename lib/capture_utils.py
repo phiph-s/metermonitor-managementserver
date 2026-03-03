@@ -198,8 +198,8 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                 INSERT OR IGNORE INTO settings
                 (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                  islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit,
-                 max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
                 name,
                 0,
@@ -217,6 +217,7 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                 None,
                 "display",
                 None,
+                3,
                 True
             ))
             meter_is_new = True
@@ -236,7 +237,7 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
         # Process the image
         try:
             result = reevaluate_latest_picture(db_file, name, meter_predictor,
-                                               config, publish=publish, mqtt_client=mqtt_client)
+                                               config, publish=publish, mqtt_client=mqtt_client, notify_realtime=publish)
             if result and len(result) >= 3:
                 boundingboxed_image = result[2]
             else:

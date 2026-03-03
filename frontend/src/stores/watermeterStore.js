@@ -27,6 +27,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     segment_mode: 'display',
     use_correctional_alg: false,
     digit_models: null,
+    decimals: 3,
   };
 
   const settings = reactive({ ...defaultSettings });
@@ -83,7 +84,8 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       template_id: data.template_id || null,
       segment_mode: data.segment_mode || 'display',
       use_correctional_alg: data.use_correctional_alg === 1 || data.use_correctional_alg === true,
-      digit_models: Array.isArray(data.digit_models) ? data.digit_models : null
+      digit_models: Array.isArray(data.digit_models) ? data.digit_models : null,
+      decimals: Number.isFinite(data.decimals) ? data.decimals : 3
     });
 
     return data;
@@ -107,6 +109,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       segment_mode: settings.segment_mode,
       use_correctional_alg: settings.use_correctional_alg,
       digit_models: settings.digit_models,
+      decimals: settings.decimals,
     };
 
     await apiService.put(`api/watermeters/${meterId}/settings`, payload);

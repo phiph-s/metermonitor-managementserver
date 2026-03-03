@@ -1,5 +1,6 @@
 import json
 import os
+import asyncio
 from io import BytesIO
 import shutil
 import tempfile
@@ -8,7 +9,7 @@ import tempfile
 import numpy as np
 from PIL import Image
 import cv2
-from fastapi import FastAPI, HTTPException, Body, Header, Depends
+from fastapi import FastAPI, HTTPException, Body, Header, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, conint
 import base64
@@ -36,6 +37,7 @@ from lib.threshold_optimizer import search_thresholds_for_meter
 from lib.capture_utils import capture_and_process_source, capture_from_ha_source, capture_from_http_source
 from lib.meter_processing.roi_extractors.orb_extractor import ORBExtractor
 from lib.meter_processing.roi_extractors.static_rect_extractor import StaticRectExtractor
+from lib.realtime_events import evaluation_event_hub
 
 
 # http server class
@@ -63,6 +65,10 @@ def prepare_setup_app(config, lifespan):
         allow_headers=["*"],
     )
 
+    @app.on_event("startup")
+    async def register_realtime_loop():
+        evaluation_event_hub.set_loop(asyncio.get_running_loop())
+
     # When using home assistant ingress, restrict access to the ingress IP
     @app.middleware("http")
     async def restrict_ip_middleware(request, call_next):
@@ -78,6 +84,21 @@ def prepare_setup_app(config, lifespan):
             return
         if secret != SECRET_KEY:
             raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.websocket("/api/ws/evaluations")
+    async def websocket_evaluations(websocket: WebSocket, secret: Optional[str] = Query(None)):
+        evaluation_event_hub.set_loop(asyncio.get_running_loop())
+        if config['enable_auth'] and secret != SECRET_KEY:
+            await websocket.close(code=1008)
+            return
+        await evaluation_event_hub.add_client(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await evaluation_event_hub.remove_client(websocket)
 
     # Models
     class PictureData(BaseModel):
@@ -111,6 +132,7 @@ def prepare_setup_app(config, lifespan):
         template_id: Optional[str] = None
         segment_mode: Optional[str] = None
         digit_models: Optional[List[str]] = None
+        decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
 
     class CaptureNowRequest(BaseModel):
@@ -137,6 +159,7 @@ def prepare_setup_app(config, lifespan):
         template_id: Optional[str] = None
         segment_mode: Optional[str] = None
         digit_models: Optional[List[str]] = None
+        decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
 
     class TemplateCreateRequest(BaseModel):
@@ -824,7 +847,7 @@ def prepare_setup_app(config, lifespan):
         db.row_factory = sqlite3.Row
         cur = db.cursor()
         cur.execute(
-            "SELECT name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg "
+            "SELECT name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg "
             "FROM settings ORDER BY name"
         )
         out = [dict(row) for row in cur.fetchall()]
@@ -841,10 +864,11 @@ def prepare_setup_app(config, lifespan):
         db = db_connection()
         cur = db.cursor()
         digit_models = json.dumps(payload.digit_models) if payload.digit_models is not None else None
+        decimals = payload.decimals if payload.decimals is not None else 3
         cur.execute(
-            "INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.name, payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, payload.roi_extractor or "yolo", payload.template_id, payload.segment_mode or "display", digit_models, 1 if payload.use_correctional_alg else 0),
+            "INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.name, payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, payload.roi_extractor or "yolo", payload.template_id, payload.segment_mode or "display", digit_models, decimals, 1 if payload.use_correctional_alg else 0),
         )
         db.commit()
         return {"message": "Settings created"}
@@ -864,10 +888,11 @@ def prepare_setup_app(config, lifespan):
             template_id = None
         segment_mode = payload.segment_mode or "display"
         digit_models = json.dumps(payload.digit_models) if payload.digit_models is not None else None
+        decimals = payload.decimals if payload.decimals is not None else 3
 
         cur.execute(
-            "UPDATE settings SET threshold_low = ?, threshold_high = ?, threshold_last_low = ?, threshold_last_high = ?, islanding_padding = ?, segments = ?, rotated_180 = ?, shrink_last_3 = ?, extended_last_digit = ?, max_flow_rate = ?, conf_threshold = ?, roi_extractor = ?, template_id = ?, segment_mode = ?, digit_models = ?, use_correctional_alg = ? WHERE name = ?",
-            (payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, roi_extractor, template_id, segment_mode, digit_models, 1 if payload.use_correctional_alg else 0, name),
+            "UPDATE settings SET threshold_low = ?, threshold_high = ?, threshold_last_low = ?, threshold_last_high = ?, islanding_padding = ?, segments = ?, rotated_180 = ?, shrink_last_3 = ?, extended_last_digit = ?, max_flow_rate = ?, conf_threshold = ?, roi_extractor = ?, template_id = ?, segment_mode = ?, digit_models = ?, decimals = ?, use_correctional_alg = ? WHERE name = ?",
+            (payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, 1 if payload.use_correctional_alg else 0, name),
         )
         db.commit()
         return {"message": "Settings updated"}
@@ -1062,7 +1087,8 @@ def prepare_setup_app(config, lifespan):
                                WHERE e.name = w.name
                                ORDER BY id DESC
                                LIMIT 1),
-                              w.picture_data_bbox IS NOT NULL
+                              w.picture_data_bbox IS NOT NULL,
+                              (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1)
                        FROM watermeters w
                        WHERE w.setup = 1
                        """)
@@ -1071,7 +1097,8 @@ def prepare_setup_app(config, lifespan):
         for row in cursor.fetchall():
             th_digits = json.loads(row[4]) if row[4] else None
             has_bbox = bool(row[5])
-            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox))
+            decimals = row[6] if row[6] is not None else 3
+            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals))
 
         return {"watermeters": result}
 
@@ -1189,7 +1216,7 @@ def prepare_setup_app(config, lifespan):
     def get_settings(name: str):
         cursor = db_connection().cursor()
         cursor.execute(
-            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg FROM settings WHERE name = ?",
+            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg FROM settings WHERE name = ?",
             (name,))
         row = cursor.fetchone()
         if not row:
@@ -1216,7 +1243,8 @@ def prepare_setup_app(config, lifespan):
             "template_id": row[12],
             "segment_mode": row[13],
             "digit_models": digit_models,
-            "use_correctional_alg": row[15]
+            "decimals": row[15],
+            "use_correctional_alg": row[16]
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
@@ -1224,12 +1252,13 @@ def prepare_setup_app(config, lifespan):
         db = db_connection()
         cursor = db.cursor()
         digit_models = json.dumps(settings.digit_models) if settings.digit_models is not None else None
+        decimals = settings.decimals if settings.decimals is not None else 3
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1245,12 +1274,13 @@ def prepare_setup_app(config, lifespan):
                                             template_id=excluded.template_id,
                                             segment_mode=excluded.segment_mode,
                                             digit_models=excluded.digit_models,
+                                            decimals=excluded.decimals,
                                             use_correctional_alg=excluded.use_correctional_alg
             """,
             (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}
@@ -1260,12 +1290,13 @@ def prepare_setup_app(config, lifespan):
         db = db_connection()
         cursor = db.cursor()
         digit_models = json.dumps(settings.digit_models) if settings.digit_models is not None else None
+        decimals = settings.decimals if settings.decimals is not None else 3
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1281,12 +1312,13 @@ def prepare_setup_app(config, lifespan):
                                             template_id=excluded.template_id,
                                             segment_mode=excluded.segment_mode,
                                             digit_models=excluded.digit_models,
+                                            decimals=excluded.decimals,
                                             use_correctional_alg=excluded.use_correctional_alg
             """,
             (name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
         )
         db.commit()
         return {"message": "Settings updated", "name": name}

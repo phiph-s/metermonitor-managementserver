@@ -34,7 +34,7 @@
           </div>
         </div>
         <div v-else-if="evaluations !== null" style="padding-left: 10px; padding-right: 10px;">
-          <EvaluationResultList :evaluations="evaluations" :name="id" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
         </div>
       </n-tab-pane>
     </n-tabs>
@@ -78,7 +78,7 @@
         </div>
       </main>
       <main class="meter-content" v-else-if="evaluations !== null">
-        <EvaluationResultList :evaluations="evaluations" :name="id" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+        <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
       </main>
     </div>
   </template>
@@ -104,6 +104,7 @@ const loading = ref(false);
 const downloadingDataset = ref(false);
 const isMobile = ref(window.innerWidth < 1000);
 const headerControls = useHeaderControls();
+let evaluationEventHandler = null;
 
 const updateWidth = () => {
   isMobile.value = window.innerWidth < 800;
@@ -111,6 +112,13 @@ const updateWidth = () => {
 
 onMounted(() => {
   window.addEventListener('resize', updateWidth);
+  evaluationEventHandler = (event) => {
+    const meterName = event?.detail?.name;
+    if (meterName && meterName === id.value) {
+      loadMeter();
+    }
+  };
+  window.addEventListener('meter-evaluation-updated', evaluationEventHandler);
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
@@ -122,6 +130,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateWidth);
+  if (evaluationEventHandler) {
+    window.removeEventListener('meter-evaluation-updated', evaluationEventHandler);
+  }
   if (headerControls) {
     headerControls.resetHeader();
   }

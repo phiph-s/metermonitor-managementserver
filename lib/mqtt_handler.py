@@ -145,8 +145,8 @@ class MQTTHandler:
                                     INSERT OR IGNORE INTO settings
                                     (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                      islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit,
-                                     max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, use_correctional_alg)
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                     max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                                 ''', (
                         data['name'],
                         0,
@@ -164,6 +164,7 @@ class MQTTHandler:
                         None,
                         "display",
                         None,
+                        3,
                         True
                     ))
 
@@ -218,7 +219,8 @@ class MQTTHandler:
                 print(f"[MQTT] Saved/updated metadata of {data['name']} to database.")
                 _, _, boundingboxed_image = reevaluate_latest_picture(self.db_file, data['name'], self.meter_preditor,
                                                                       self.config, publish=True,
-                                                                      mqtt_client=self.client)
+                                                                      mqtt_client=self.client,
+                                                                      notify_realtime=True)
                 # Insert boundingboxed image into database
                 if boundingboxed_image:
                     cursor.execute('''

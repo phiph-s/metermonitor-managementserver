@@ -260,7 +260,7 @@ class MeterPredictor:
 
         return predicted_digits
 
-    def apply_thresholds(self, digits, thresholds, thresholds_last, islanding_padding):
+    def apply_thresholds(self, digits, thresholds, thresholds_last, islanding_padding, decimals=3):
         """
         Digits are np arrays
         apply black/white thresholding to each digit
@@ -273,8 +273,9 @@ class MeterPredictor:
 
         threshold_low = thresholds[0]
         threshold_high = thresholds[1]
+        last_count = max(0, min(int(decimals or 0), len(digits)))
         for i, digit in enumerate(digits):
-            if i >= len(digits) - 3:
+            if last_count > 0 and i >= len(digits) - last_count:
                 threshold_low = thresholds_last[0]
                 threshold_high = thresholds_last[1]
             img_str, digit = self.apply_threshold(digit, threshold_low, threshold_high, islanding_padding)

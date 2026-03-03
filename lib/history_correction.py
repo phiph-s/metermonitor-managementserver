@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 
-def correct_value(db_file: str, name: str, new_eval, allow_negative_correction = False, max_flow_rate = 1.0, use_full_correction = True):
+def correct_value(db_file: str, name: str, new_eval, allow_negative_correction = False, max_flow_rate = 1.0, use_full_correction = True, decimals: int = 3):
     # get last evaluation
     reject = False
     metadata = {
@@ -85,6 +85,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         fallback_digit_count = 0
         prediction_rank_used_counts = [0, 0, 0]
 
+        scale = 10 ** int(decimals or 0)
+
         # Light correction mode: only replace r/rotation and denied digits with last value
         if not use_full_correction:
             for i, lastChar in enumerate(last_value):
@@ -126,7 +128,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
 
             # No flow rate or positive flow checks in light mode
             delta_raw = int(correctedValue) - int(last_value)
-            delta_m3 = delta_raw / 1000.0
+            delta_m3 = delta_raw / float(scale)
             flow_rate_m3min = delta_m3 / time_diff
             flow_rate_m3h = flow_rate_m3min * 60.0
             metadata["delta_raw"] = delta_raw
@@ -231,7 +233,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
 
         # get the flow rate and check if it is within the limits
         delta_raw = int(correctedValue) - int(last_value)
-        delta_m3 = delta_raw / 1000.0
+        delta_m3 = delta_raw / float(scale)
         flow_rate_m3min = delta_m3 / time_diff
         flow_rate_m3h = flow_rate_m3min * 60.0
         metadata["delta_raw"] = delta_raw

@@ -23,8 +23,8 @@ class ThresholdOptimizer:
     Optimizes threshold values for meter digit extraction.
 
     The thresholds work as follows:
-    - Main threshold (threshold_low, threshold_high): Applied to all digits except the last 3
-    - Last 3 threshold (threshold_last_low, threshold_last_high): Applied only to the last 3 digits
+    - Main threshold (threshold_low, threshold_high): Applied to all digits except the last decimal digits
+    - Last threshold (threshold_last_low, threshold_last_high): Applied only to the last decimal digits
 
     The optimizer finds values that maximize the confidence of the digit recognition model.
     """
@@ -37,7 +37,8 @@ class ThresholdOptimizer:
         colored_digits: List[str],
         islanding_padding: int = 20,
         steps: int = 10,
-        digit_models: Optional[List[str]] = None
+        digit_models: Optional[List[str]] = None,
+        decimals: int = 3
     ) -> dict:
         """
         Search for optimal threshold values using grid search.
@@ -85,19 +86,26 @@ class ThresholdOptimizer:
             "valid_digits": 0
         }
 
-        # Search main threshold (for non-last-3 digits)
-        main_models = digit_models[:-3] if digit_models and len(digit_images) > 3 else None
+        # Search main threshold (for non-decimal digits)
+        last_count = max(0, min(int(decimals or 0), len(digit_images)))
+        main_models = None
+        if digit_models:
+            main_models = digit_models if last_count == 0 else digit_models[:-last_count]
+        main_images = digit_images if last_count == 0 else (digit_images[:-last_count] if len(digit_images) > last_count else [])
         best_main = self._search_threshold_range(
-            digit_images[:-3] if len(digit_images) > 3 else [],
+            main_images,
             threshold_values,
             islanding_padding,
             model_types=main_models
         )
 
-        # Search last-3 threshold
-        last_models = digit_models[-3:] if digit_models and len(digit_images) >= 3 else digit_models
+        # Search last-decimals threshold
+        last_models = None
+        if digit_models:
+            last_models = [] if last_count == 0 else digit_models[-last_count:]
+        last_images = [] if last_count == 0 else (digit_images[-last_count:] if len(digit_images) >= last_count else digit_images)
         best_last = self._search_threshold_range(
-            digit_images[-3:] if len(digit_images) >= 3 else digit_images,
+            last_images,
             threshold_values,
             islanding_padding,
             model_types=last_models
@@ -106,7 +114,7 @@ class ThresholdOptimizer:
         # Phase 2: Refinement around best values
         if steps >= 5:
             refined_main = self._refine_threshold(
-                digit_images[:-3] if len(digit_images) > 3 else [],
+                main_images,
                 best_main["threshold"],
                 islanding_padding,
                 refinement_range=step_size,
@@ -116,7 +124,7 @@ class ThresholdOptimizer:
                 best_main = refined_main
 
             refined_last = self._refine_threshold(
-                digit_images[-3:] if len(digit_images) >= 3 else digit_images,
+                last_images,
                 best_last["threshold"],
                 islanding_padding,
                 refinement_range=step_size,
@@ -131,7 +139,8 @@ class ThresholdOptimizer:
             best_main["threshold"],
             best_last["threshold"],
             islanding_padding,
-            model_types=digit_models
+            model_types=digit_models,
+            decimals=decimals
         )
 
         return {
@@ -294,13 +303,14 @@ class ThresholdOptimizer:
         main_threshold: List[int],
         last_threshold: List[int],
         islanding_padding: int,
-        model_types: Optional[List[str]] = None
+        model_types: Optional[List[str]] = None,
+        decimals: int = 3
     ) -> dict:
         """
         Evaluate combined thresholds on all digits.
 
-        Applies main_threshold to all digits except last 3,
-        and last_threshold to the last 3 digits.
+        Applies main_threshold to all digits except last decimals,
+        and last_threshold to the last decimals.
         """
         if not digit_images:
             return {"total_confidence": 0.0, "avg_confidence": 0.0, "valid_digits": 0}
@@ -311,8 +321,9 @@ class ThresholdOptimizer:
 
         for i, digit_img in enumerate(digit_images):
             # Use appropriate threshold based on position
-            is_last_3 = i >= num_digits - 3
-            current_threshold = last_threshold if is_last_3 else main_threshold
+            last_count = max(0, min(int(decimals or 0), num_digits))
+            is_last = last_count > 0 and i >= num_digits - last_count
+            current_threshold = last_threshold if is_last else main_threshold
 
             try:
                 _, processed_digit = self.meter_predictor.apply_threshold(
@@ -388,17 +399,20 @@ def search_thresholds_for_meter(
 
         # Get current islanding_padding from settings
         cursor.execute(
-            "SELECT islanding_padding, digit_models FROM settings WHERE name = ?",
+            "SELECT islanding_padding, digit_models, decimals FROM settings WHERE name = ?",
             (name,)
         )
         settings_row = cursor.fetchone()
         islanding_padding = settings_row[0] if settings_row else 20
         digit_models = None
+        decimals = 3
         if settings_row and len(settings_row) > 1 and settings_row[1]:
             try:
                 digit_models = json.loads(settings_row[1])
             except Exception:
                 digit_models = None
+        if settings_row and len(settings_row) > 2 and settings_row[2] is not None:
+            decimals = settings_row[2]
 
         # Run optimization
         optimizer = ThresholdOptimizer(meter_predictor)
@@ -406,7 +420,8 @@ def search_thresholds_for_meter(
             colored_digits,
             islanding_padding=islanding_padding,
             steps=steps,
-            digit_models=digit_models
+            digit_models=digit_models,
+            decimals=decimals
         )
 
         return result

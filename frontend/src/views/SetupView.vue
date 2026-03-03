@@ -69,11 +69,13 @@
               :islanding_padding="islandingPadding"
               :segments="segments"
               :digit-models="digitModels"
+              :decimals="decimals"
               :loading="loading"
               :searching-thresholds="searchingThresholds"
               :threshold-search-result="thresholdSearchResult"
               @update="(data) => setupStore.updateThresholds(data, id)"
               @update-digit-models="(models) => setupStore.updateDigitModels(models, id)"
+              @update-decimals="(value) => setupStore.updateDecimals(value, id)"
               @reevaluate="() => setupStore.redoDigitEval(id) && setupStore.clearEvaluationExamples(id)"
               @next="() =>  {setupStore.nextStep(2); currentlyFocusedStep = 3}"
               @search-thresholds="(steps) => setupStore.searchThresholds(id, steps)"
@@ -193,10 +195,12 @@ const maxFlowRate = computed(() => settings.value?.max_flow_rate || 0);
 const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
 const digitModels = computed(() => settings.value?.digit_models || null);
+const decimals = computed(() => Number.isFinite(settings.value?.decimals) ? settings.value.decimals : 3);
 
 const templatePoints = ref([]);
 const templateDigitQuads = ref([]);
 const pendingTemplateSave = ref(false);
+let evaluationEventHandler = null;
 
 watch(templateId, async (next) => {
   if (!next) return;
@@ -264,6 +268,13 @@ const onSegmentationNext = () => {
 onMounted(() => {
   setupStore.reset();
   setupStore.getData(id);
+  evaluationEventHandler = (event) => {
+    const meterName = event?.detail?.name;
+    if (meterName && meterName === id) {
+      setupStore.getData(id);
+    }
+  };
+  window.addEventListener('meter-evaluation-updated', evaluationEventHandler);
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
@@ -274,6 +285,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (evaluationEventHandler) {
+    window.removeEventListener('meter-evaluation-updated', evaluationEventHandler);
+  }
   if (headerControls) {
     headerControls.resetHeader();
   }

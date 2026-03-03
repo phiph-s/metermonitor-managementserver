@@ -95,8 +95,9 @@
           :last_digits="item[4]"
           :last_result="item[3]"
           :has_bbox="item[5]"
-          :last_error="item[6]"
-          :source_type="item[7]"
+          :decimals="item[6]"
+          :last_error="item[7]"
+          :source_type="item[8]"
           @removed="getData"
       />
       <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true">
@@ -135,6 +136,7 @@ const loading = ref(false);
 const config = ref(null);
 const showAddSource = ref(false);
 const headerControls = useHeaderControls();
+let evaluationEventHandler = null;
 
 const host = import.meta.env.VITE_HOST;
 
@@ -185,6 +187,10 @@ const getData = async () => {
 
 onMounted(() => {
   getData();
+  evaluationEventHandler = () => {
+    getData();
+  };
+  window.addEventListener('meter-evaluation-updated', evaluationEventHandler);
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
@@ -195,6 +201,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (evaluationEventHandler) {
+    window.removeEventListener('meter-evaluation-updated', evaluationEventHandler);
+  }
   if (headerControls) {
     headerControls.resetHeader();
   }
