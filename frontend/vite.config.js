@@ -5,12 +5,16 @@ import fs from 'fs'
 import { execSync } from 'child_process'
 
 const rootConfigPath = path.resolve(__dirname, '../config.json')
+const localConfigPath = path.resolve(__dirname, './config.json')
 const frontendPkgPath = path.resolve(__dirname, './package.json')
 
 let appVersion = '0.0.0'
 try {
   if (fs.existsSync(rootConfigPath)) {
     const addonConfig = JSON.parse(fs.readFileSync(rootConfigPath, 'utf-8'))
+    appVersion = addonConfig.version || appVersion
+  } else if (fs.existsSync(localConfigPath)) {
+    const addonConfig = JSON.parse(fs.readFileSync(localConfigPath, 'utf-8'))
     appVersion = addonConfig.version || appVersion
   } else if (fs.existsSync(frontendPkgPath)) {
     const frontendPkg = JSON.parse(fs.readFileSync(frontendPkgPath, 'utf-8'))

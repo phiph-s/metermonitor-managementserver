@@ -16,6 +16,8 @@ RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
 
 # 3. Copy the rest of the frontend source code
 COPY frontend/ ./
+# Make addon version metadata available for Vite in container builds.
+COPY config.json ./config.json
 
 # 4. Build
 RUN yarn build
