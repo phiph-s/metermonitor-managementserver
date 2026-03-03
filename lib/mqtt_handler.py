@@ -1,10 +1,13 @@
 import datetime
 import time
+import base64
 
 import paho.mqtt.client as mqtt
 import json
 import sqlite3
 from typing import Dict, Any
+from io import BytesIO
+from PIL import Image
 
 from lib.functions import reevaluate_latest_picture, publish_registration
 from lib.model_singleton import get_meter_predictor
@@ -79,20 +82,13 @@ class MQTTHandler:
         self._process_message(data)
 
     def _validate_message(self, data: Dict[str, Any]) -> bool:
-        # Erforderliche Top-Level Felder
-        required_fields = {'name', 'picture_number', 'WiFi-RSSI', 'picture'}
+        # Required top-level fields
+        required_fields = {'name', 'picture'}
         if not all(field in data for field in required_fields):
             return False
 
-        # Erforderliche Felder im 'picture' Objekt
-        required_picture_fields = {
-            'timestamp',
-            'format',
-            'width',
-            'height',
-            'length',
-            'data'
-        }
+        # Required fields in picture
+        required_picture_fields = {'data'}
 
         if not isinstance(data['picture'], dict):
             return False
@@ -101,6 +97,69 @@ class MQTTHandler:
             return False
 
         return True
+
+    @staticmethod
+    def _parse_timestamp(raw_timestamp):
+        if raw_timestamp is None or raw_timestamp == "" or raw_timestamp == "0":
+            return datetime.datetime.now().isoformat()
+
+        # Numeric unix timestamp (seconds or ms)
+        if isinstance(raw_timestamp, (int, float)):
+            ts = float(raw_timestamp)
+            if ts > 1e12:
+                ts /= 1000.0
+            return datetime.datetime.fromtimestamp(ts).isoformat()
+
+        if isinstance(raw_timestamp, str):
+            value = raw_timestamp.strip()
+            if not value:
+                return datetime.datetime.now().isoformat()
+
+            # Numeric string unix timestamp (seconds or ms)
+            if value.isdigit():
+                ts = float(value)
+                if ts > 1e12:
+                    ts /= 1000.0
+                return datetime.datetime.fromtimestamp(ts).isoformat()
+
+            # ISO timestamp
+            try:
+                return datetime.datetime.fromisoformat(value).isoformat()
+            except Exception:
+                return datetime.datetime.now().isoformat()
+
+        return datetime.datetime.now().isoformat()
+
+    @staticmethod
+    def _decode_picture_data(raw_data):
+        if not isinstance(raw_data, str):
+            raise ValueError("picture.data must be a base64 string")
+
+        data = raw_data.strip()
+        fmt_from_prefix = None
+
+        # Accept data URI format: data:image/png;base64,....
+        if data.startswith("data:"):
+            header, _, payload = data.partition(",")
+            data = payload
+            if "/" in header and ";" in header:
+                try:
+                    fmt_from_prefix = header.split("/")[1].split(";")[0].lower()
+                except Exception:
+                    fmt_from_prefix = None
+
+        decoded = base64.b64decode(data, validate=True)
+        canonical_b64 = base64.b64encode(decoded).decode("utf-8")
+        return decoded, canonical_b64, fmt_from_prefix
+
+    @staticmethod
+    def _detect_image_meta(image_bytes, fmt_hint=None):
+        with Image.open(BytesIO(image_bytes)) as img:
+            width, height = img.size
+            fmt = (fmt_hint or img.format or "jpeg").lower()
+        if fmt == "jpg":
+            fmt = "jpeg"
+        return fmt, width, height
 
     # Process the incoming message
     def _process_message(self, data: Dict[str, Any]):
@@ -112,18 +171,22 @@ class MQTTHandler:
             print(f"[MQTT] Received message for watermeter {data['name']}")
 
 
-            # Check if timestamp is 0 or null, if so set it to current time
-            if not data['picture']['timestamp']or data['picture']['timestamp'] == "0":
-                # current iso time
-                data['picture']['timestamp'] = datetime.datetime.now().isoformat()
-                print(f"[MQTT] Timestamp was missing or zero, set to current time for {data['name']} ({data['picture']['timestamp']})")
+            timestamp = self._parse_timestamp(data['picture'].get('timestamp'))
+            image_bytes, picture_data_b64, fmt_from_prefix = self._decode_picture_data(data['picture']['data'])
+            picture_format, picture_width, picture_height = self._detect_image_meta(
+                image_bytes,
+                fmt_hint=(data['picture'].get('format') or fmt_from_prefix)
+            )
+            picture_length = len(image_bytes)
+            wifi_rssi = data.get('WiFi-RSSI')
 
             with sqlite3.connect(self.db_file) as conn:
 
                 cursor = conn.cursor()
                 #check if watermeter exists
-                cursor.execute("SELECT * FROM watermeters WHERE name = ?", (data['name'],))
-                meter_exists = cursor.fetchone() is not None
+                cursor.execute("SELECT picture_number FROM watermeters WHERE name = ?", (data['name'],))
+                row = cursor.fetchone()
+                meter_exists = row is not None
 
                 if not meter_exists:
                     cursor.execute('''
@@ -131,14 +194,14 @@ class MQTTHandler:
                         VALUES (?,?,?,?,?,?,?,?,?,?,NULL)
                     ''', (
                         data['name'],
-                        data['picture_number'],
-                        data['WiFi-RSSI'],
-                        data['picture']['format'],
-                        data['picture']['timestamp'],
-                        data['picture']['width'],
-                        data['picture']['height'],
-                        data['picture']['length'],
-                        data['picture']['data'],
+                        1,
+                        wifi_rssi,
+                        picture_format,
+                        timestamp,
+                        picture_width,
+                        picture_height,
+                        picture_length,
+                        picture_data_b64,
                         0
                     ))
                     cursor.execute('''
@@ -170,6 +233,7 @@ class MQTTHandler:
 
                     publish_registration(self.client, self.config, data['name'], "value")
                 else:
+                    next_picture_number = int(row[0] or 0) + 1
                     cursor.execute('''
                             UPDATE watermeters 
                             SET 
@@ -184,14 +248,14 @@ class MQTTHandler:
                                 picture_data_bbox = NULL
                             WHERE name = ?
                         ''', (
-                        data['picture_number'],
-                        data['WiFi-RSSI'],
-                        data['picture']['format'],
-                        data['picture']['timestamp'],
-                        data['picture']['width'],
-                        data['picture']['height'],
-                        data['picture']['length'],
-                        data['picture']['data'],
+                        next_picture_number,
+                        wifi_rssi,
+                        picture_format,
+                        timestamp,
+                        picture_width,
+                        picture_height,
+                        picture_length,
+                        picture_data_b64,
                         data['name']
                     ))
 

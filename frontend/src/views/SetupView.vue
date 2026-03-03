@@ -45,10 +45,10 @@
             </n-button>
           </template>
           <div style="max-width: 300px">
-            <img src="@/assets/example_segmentation.png" alt="Example segmentation" style="max-width: 100%"/>
             <ul>
-              <li>Numbers should be entirely visible</li>
-              <li>One number per segement</li>
+              <li><a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide: segmentation step</a></li>
+              <li><a :href="docsLink('roi-extractors.md')" target="_blank" rel="noreferrer">ROI extractor details</a></li>
+              <li><a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting segmentation issues</a></li>
             </ul>
           </div>
         </n-tooltip>
@@ -91,12 +91,10 @@
             </n-button>
           </template>
           <div style="max-width: 300px">
-            <img src="@/assets/example_thresholds.png" alt="Example segmentation" style="max-width: 100%"/>
             <ul>
-              <li>Select thresholds to extract numbers</li>
-              <li>Numbers should be clearly visible</li>
-              <li>Use the "evaluate" button to test the values</li>
-              <li>Use "extraction padding" to remove as much artifacts as possible</li>
+              <li><a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide: threshold & decimal tuning</a></li>
+              <li><a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Threshold and decimals reference</a></li>
+              <li><a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Threshold troubleshooting</a></li>
             </ul>
           </div>
         </n-tooltip>
@@ -138,9 +136,9 @@
           </template>
           <div style="max-width: 300px">
             <ul>
-              <li>Check the values the model extracted</li>
-              <li>Reflections and uneven lighting can cause issues</li>
-              <li>Manually enter the correct value without a decimal point or leading zeros</li>
+              <li><a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Evaluation and correction workflow</a></li>
+              <li><a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Confidence and correction settings</a></li>
+              <li><a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Fix low confidence / rejected readings</a></li>
             </ul>
           </div>
         </n-tooltip>
@@ -196,6 +194,8 @@ const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
 const digitModels = computed(() => settings.value?.digit_models || null);
 const decimals = computed(() => Number.isFinite(settings.value?.decimals) ? settings.value.decimals : 3);
+const docsBase = 'https://metermonitor-io.github.io/#/';
+const docsLink = (page) => `${docsBase}${page}`;
 
 const templatePoints = ref([]);
 const templateDigitQuads = ref([]);

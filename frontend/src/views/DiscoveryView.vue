@@ -1,5 +1,5 @@
 <template>
-  <AddSourceDialog v-model:show="showAddSource" @created="getData" />
+  <AddSourceDialog v-model:show="showAddSource" :config="config" @created="getData" />
 
   <div v-if="discoveredMeters.length === 0 && waterMeters.length === 0 && config">
     <n-space vertical size="large">
@@ -19,7 +19,7 @@
             </n-button>
 
             <n-button quaternary type="info">
-              <a href="https://github.com/phiph-s/metermonitor-managementserver/" target="_blank" rel="noreferrer" style="text-decoration: none; color: inherit;">
+              <a href="https://metermonitor-io.github.io/#/" target="_blank" rel="noreferrer" style="text-decoration: none; color: inherit;">
                 GitHub Documentation
               </a>
             </n-button>
@@ -33,30 +33,7 @@
         </div>
       </n-flex>
       <n-divider />
-      <div>
-        <b>MQTT payload format</b>
-        <div class="code">
-          {<br>
-          &nbsp;"name": "unique name",<br>
-          &nbsp;"picture_number": 57,<br>
-          &nbsp;"WiFi-RSSI": -57,<br>
-          &nbsp;"picture": {<br>
-          &nbsp;&nbsp;"format": "jpeg",<br>
-          &nbsp;&nbsp;"timestamp": "2025-...",<br>
-          &nbsp;&nbsp;"width": 640,<br>
-          &nbsp;&nbsp;"height": 320,<br>
-          &nbsp;&nbsp;"length": 12345,<br>
-          &nbsp;&nbsp;"data": "..."<br>
-          &nbsp;}<br>
-          }
-        </div>
-      </div>
-
-      <div>
-        <b>Current MQTT config</b><br />
-        Broker: <span class="code-inline">{{ config?.mqtt?.broker }}</span><br />
-        Topic: <span class="code-inline">{{ config?.mqtt?.topic }}</span>
-      </div>
+      <MQTTSetupHelper :config="config"/>
     </n-space>
   </div>
 
@@ -108,7 +85,7 @@
       </div>
     </n-flex>
   </template>
-  <n-flex class="watermeters-row" v-else>
+  <n-flex class="watermeters-row" v-else-if="discoveredMeters.length !== 0 && waterMeters.length === 0 && config">
     <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true" >
       <div class="add-card-inner">
         <n-icon><AddOutlined /></n-icon>
@@ -120,14 +97,14 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue';
-import { NH2, NFlex, NButton, NDivider, NCard, NSpace, NIcon } from 'naive-ui';
+import {onMounted, onUnmounted, ref, watch} from 'vue';
+import {NButton, NDivider, NFlex, NH2, NIcon, NSpace} from 'naive-ui';
 import router from "@/router";
 import WaterMeterCard from "@/components/WaterMeterCard.vue";
 import AddSourceDialog from "@/components/AddSourceDialog.vue";
-import { useHeaderControls } from '@/composables/headerControls';
-import { PendingActionsOutlined } from '@vicons/material';
-import { AddOutlined } from '@vicons/material';
+import {useHeaderControls} from '@/composables/headerControls';
+import {AddOutlined, PendingActionsOutlined} from '@vicons/material';
+import MQTTSetupHelper from "@/views/MQTTSetupHelper.vue";
 
 const discoveredMeters = ref([]);
 const waterMeters = ref([]);
@@ -280,19 +257,4 @@ watch(loading, (next) => {
   font-size: 16px;
 }
 
-.code{
-  font-family: monospace, monospace;
-  background-color: rgba(255,255,255,0.1)
-}
-
-div.code{
-  background: none;
-}
-
-.code-inline{
-  font-family: monospace, monospace;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background-color: rgba(255,255,255,0.08);
-}
 </style>
