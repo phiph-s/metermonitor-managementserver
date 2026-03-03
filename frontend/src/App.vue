@@ -132,10 +132,13 @@ const buildTagType = computed(() => {
 });
 
 const toWebsocketUrl = (baseHost) => {
-  const normalized = baseHost.endsWith('/') ? baseHost : `${baseHost}/`;
-  const wsBase = normalized.replace(/^http/i, 'ws');
+  const apiProbe = new URL(`${baseHost}api/alerts`, window.location.href);
+  const wsTarget = new URL(apiProbe.toString());
+  wsTarget.pathname = wsTarget.pathname.replace(/api\/alerts$/, 'api/ws/evaluations');
+  wsTarget.protocol = wsTarget.protocol === 'https:' ? 'wss:' : 'ws:';
   const secret = encodeURIComponent(localStorage.getItem('secret') || '');
-  return `${wsBase}api/ws/evaluations?secret=${secret}`;
+  wsTarget.search = `secret=${secret}`;
+  return wsTarget.toString();
 };
 
 const connectWebsocket = () => {
