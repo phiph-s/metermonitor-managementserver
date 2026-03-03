@@ -35,23 +35,13 @@
             @save-template="() => setupStore.saveTemplate(id, templatePoints.value, templateDigitQuads.value)"
         />
         </div>
-        <br>
-        <n-tooltip trigger="hover" placement="bottom">
-          <template #trigger>
-            <n-button circle type="info" ghost>
-              <template #icon>
-                <n-icon><HelpOutlineFilled /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div style="max-width: 300px">
-            <ul>
-              <li><a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide: segmentation step</a></li>
-              <li><a :href="docsLink('roi-extractors.md')" target="_blank" rel="noreferrer">ROI extractor details</a></li>
-              <li><a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting segmentation issues</a></li>
-            </ul>
-          </div>
-        </n-tooltip>
+        <div class="help-links">
+          <a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide</a>
+          ·
+          <a :href="docsLink('roi-extractors.md')" target="_blank" rel="noreferrer">ROI extractor details</a>
+          ·
+          <a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting</a>
+        </div>
       </div>
     </n-step>
     <n-step
@@ -81,23 +71,13 @@
               @search-thresholds="(steps) => setupStore.searchThresholds(id, steps)"
           />
         </div>
-        <br>
-        <n-tooltip trigger="hover" placement="bottom">
-          <template #trigger>
-            <n-button circle type="info" ghost>
-              <template #icon>
-                <n-icon><HelpOutlineFilled /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div style="max-width: 300px">
-            <ul>
-              <li><a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide: threshold & decimal tuning</a></li>
-              <li><a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Threshold and decimals reference</a></li>
-              <li><a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Threshold troubleshooting</a></li>
-            </ul>
-          </div>
-        </n-tooltip>
+        <div class="help-links">
+          <a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide</a>
+          ·
+          <a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Threshold reference</a>
+          ·
+          <a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting</a>
+        </div>
       </div>
     </n-step>
     <n-step
@@ -125,23 +105,13 @@
               :randomExamples="randomExamples"
           />
         </div>
-         <br>
-        <n-tooltip trigger="hover" placement="bottom">
-          <template #trigger>
-            <n-button circle type="info" ghost>
-              <template #icon>
-                <n-icon><HelpOutlineFilled /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div style="max-width: 300px">
-            <ul>
-              <li><a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Evaluation and correction workflow</a></li>
-              <li><a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Confidence and correction settings</a></li>
-              <li><a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Fix low confidence / rejected readings</a></li>
-            </ul>
-          </div>
-        </n-tooltip>
+        <div class="help-links">
+          <a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Evaluation workflow</a>
+          ·
+          <a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Confidence &amp; correction settings</a>
+          ·
+          <a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting</a>
+        </div>
       </div>
     </n-step>
   </n-steps>
@@ -150,8 +120,7 @@
 
 <script setup>
 import {onMounted, onUnmounted, computed, ref, watch} from 'vue';
-import { NSteps, NStep, NButton, NH2, NTooltip, NIcon } from 'naive-ui';
-import { HelpOutlineFilled } from '@vicons/material';
+import { NSteps, NStep, NH2 } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { useWatermeterStore } from '@/stores/watermeterStore';
@@ -303,5 +272,20 @@ watch(loading, (next) => {
 .segmentation-panel {
   width: 100%;
   max-width: 500px;
+}
+
+.help-links {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.help-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.help-links a:hover {
+  text-decoration: underline;
 }
 </style>

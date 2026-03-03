@@ -53,6 +53,7 @@
           </div>
         </div>
         <router-view></router-view>
+        <WhatsNewDialog />
       </n-layout-content>
     </n-layout>
   </n-space>
@@ -63,6 +64,7 @@
 import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NTag, useNotification} from 'naive-ui';
 import { LightModeOutlined, DarkModeOutlined } from '@vicons/material';
 import {onMounted, onUnmounted, ref, computed, reactive, provide} from "vue";
+import WhatsNewDialog from '@/components/WhatsNewDialog.vue';
 import { useRoute } from 'vue-router';
 import router from "@/router";
 import { useThemeStore } from '@/stores/themeStore';
