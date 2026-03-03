@@ -9,6 +9,28 @@ import cv2
 
 from lib.history_correction import correct_value
 from lib.meter_processing.roi_extractors.orb_extractor import ORBExtractor
+from lib.realtime_events import evaluation_event_hub
+
+def _normalize_digit_models(raw_models, digit_count: int):
+    if not raw_models:
+        return ["rotating"] * digit_count
+    if isinstance(raw_models, str):
+        try:
+            parsed = json.loads(raw_models)
+        except Exception:
+            parsed = []
+    else:
+        parsed = raw_models
+    if not isinstance(parsed, list):
+        parsed = []
+    models = []
+    for i in range(digit_count):
+        model = parsed[i] if i < len(parsed) else None
+        if model not in {"rotating", "segment"}:
+            model = "rotating"
+        models.append(model)
+    return models
+
 
 def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: int = None):
     with sqlite3.connect(db_file) as conn:
@@ -65,7 +87,9 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
                               shrink_last_3,
                               extended_last_digit,
                               max_flow_rate,
-                              rotated_180
+                              rotated_180,
+                              digit_models,
+                              decimals
                        FROM settings
                        WHERE name = ?
                        ''', (name,))
@@ -75,13 +99,16 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
         thresholds = [settings[0], settings[1]]
         thresholds_last = [settings[2], settings[3]]
         islanding_padding = settings[4]
+        digit_models = settings[10] if len(settings) > 10 else None
+        decimals = settings[11] if len(settings) > 11 and settings[11] is not None else 3
+        model_types = _normalize_digit_models(digit_models, len(digits))
 
         if len(thresholds) == 0:
             print(f"[Eval ({name})] No thresholds found for {name}")
             return {"error": "No thresholds found"}
         else:
-            processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding)
-            prediction = meter_preditor.predict_digits(digits)
+            processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding, decimals=decimals)
+            prediction = meter_preditor.predict_digits(digits, model_types=model_types)
 
         return {
             "processed_images": digits_inverted,
@@ -92,7 +119,7 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
 
 
 # This file reevaluates the latest picture of a watermeter and saves the result in the database.
-def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, publish: bool = False, skip_setup_overwriting = True, mqtt_client = None):
+def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, publish: bool = False, skip_setup_overwriting = True, mqtt_client = None, notify_realtime: bool = False):
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
         meter_preditor.last_error = None
@@ -111,7 +138,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         # Get current settings for the watermeter
         cursor.execute('''
                    SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
-                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, use_correctional_alg
+                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg
                    FROM settings
                    WHERE name = ?
                ''', (name,))
@@ -127,7 +154,10 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         conf_threshold = settings[10] if settings[10] else 0.0
         roi_extractor = settings[11] if settings[11] else "yolo"
         template_id = settings[12] if settings[12] else None
-        use_correctional_alg = bool(settings[13]) if settings[13] is not None else True
+        segment_mode = settings[13] if settings[13] else "display"
+        digit_models = settings[14] if len(settings) > 14 else None
+        decimals = settings[15] if len(settings) > 15 and settings[15] is not None else 3
+        use_correctional_alg = bool(settings[16]) if settings[16] is not None else True
 
         # Get the target_brightness from the last history entry
         cursor.execute("SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
@@ -164,7 +194,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             rotated_180=rotated_180,
             target_brightness=target_brightness,
             roi_extractor=roi_extractor,
-            extractor_instance=extractor_instance
+            extractor_instance=extractor_instance,
+            segment_mode=segment_mode
         )
 
         if not result or len(result) == 0:
@@ -180,8 +211,9 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         if len(thresholds) == 0:
             print(f"[Eval ({name})] No thresholds found for {name}")
         else:
-            processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding)
-            prediction = meter_preditor.predict_digits(digits)
+            processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding, decimals=decimals)
+            model_types = _normalize_digit_models(digit_models, len(digits))
+            prediction = meter_preditor.predict_digits(digits, model_types=model_types)
 
         # check for each digit if its highest conf is above conf_threshold, otherwise mark it as denied
         denied_digits = []
@@ -209,7 +241,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             "timestamp_adjusted": None
         }
         if setup:
-            correction = correct_value(db_file, name, [result, processed, prediction, timestamp, denied_digits], allow_negative_correction=config["allow_negative_correction"], max_flow_rate=max_flow_rate, use_full_correction=use_correctional_alg)
+            correction = correct_value(db_file, name, [result, processed, prediction, timestamp, denied_digits], allow_negative_correction=config["allow_negative_correction"], max_flow_rate=max_flow_rate, use_full_correction=use_correctional_alg, decimals=decimals)
             correction_meta = {k: correction.get(k) for k in correction_meta.keys()}
             confidence = correction.get("total_confidence", 0.0)
             used_confidence = correction.get("used_confidence", 0.0)
@@ -242,7 +274,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
                 ''', (name, name, config['max_history']))
 
                 if publish and mqtt_client:
-                    publish_value(mqtt_client, config, name, value)
+                    publish_value(mqtt_client, config, name, value, decimals=decimals)
 
         curser = cursor.execute('''
             SELECT COUNT(*) FROM evaluations  
@@ -357,15 +389,23 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
 
         conn.commit()
 
+        if notify_realtime and setup:
+            evaluation_event_hub.notify({
+                "type": "evaluation_created",
+                "name": name,
+                "timestamp": timestamp if isinstance(timestamp, str) else None
+            })
+
         print(f"[Eval ({name})] Prediction saved")
         return target_brightness, confidence, boundingboxed_image
 
 # Function to publish the value to the MQTT broker, compatible with Home Assistant
-def publish_value(mqtt_client, config, name, value):
+def publish_value(mqtt_client, config, name, value, decimals=3):
     # publish to topic
     topic = config["publish_to"].replace("{device}", name) + "value"
+    scale = 10 ** int(decimals or 0)
     dict = {
-        "value": int(value) / 1000.0,
+        "value": int(value) / float(scale),
     }
     mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
     print(f"[Eval/MQTT ({name})] Value published ({value} m³)")

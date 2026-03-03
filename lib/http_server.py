@@ -1,5 +1,6 @@
 import json
 import os
+import asyncio
 from io import BytesIO
 import shutil
 import tempfile
@@ -8,7 +9,7 @@ import tempfile
 import numpy as np
 from PIL import Image
 import cv2
-from fastapi import FastAPI, HTTPException, Body, Header, Depends
+from fastapi import FastAPI, HTTPException, Body, Header, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, conint
 import base64
@@ -36,6 +37,7 @@ from lib.threshold_optimizer import search_thresholds_for_meter
 from lib.capture_utils import capture_and_process_source, capture_from_ha_source, capture_from_http_source
 from lib.meter_processing.roi_extractors.orb_extractor import ORBExtractor
 from lib.meter_processing.roi_extractors.static_rect_extractor import StaticRectExtractor
+from lib.realtime_events import evaluation_event_hub
 
 
 # http server class
@@ -63,6 +65,10 @@ def prepare_setup_app(config, lifespan):
         allow_headers=["*"],
     )
 
+    @app.on_event("startup")
+    async def register_realtime_loop():
+        evaluation_event_hub.set_loop(asyncio.get_running_loop())
+
     # When using home assistant ingress, restrict access to the ingress IP
     @app.middleware("http")
     async def restrict_ip_middleware(request, call_next):
@@ -78,6 +84,21 @@ def prepare_setup_app(config, lifespan):
             return
         if secret != SECRET_KEY:
             raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.websocket("/api/ws/evaluations")
+    async def websocket_evaluations(websocket: WebSocket, secret: Optional[str] = Query(None)):
+        evaluation_event_hub.set_loop(asyncio.get_running_loop())
+        if config['enable_auth'] and secret != SECRET_KEY:
+            await websocket.close(code=1008)
+            return
+        await evaluation_event_hub.add_client(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await evaluation_event_hub.remove_client(websocket)
 
     # Models
     class PictureData(BaseModel):
@@ -109,6 +130,9 @@ def prepare_setup_app(config, lifespan):
         conf_threshold: float
         roi_extractor: Optional[str] = None
         template_id: Optional[str] = None
+        segment_mode: Optional[str] = None
+        digit_models: Optional[List[str]] = None
+        decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
 
     class CaptureNowRequest(BaseModel):
@@ -133,6 +157,9 @@ def prepare_setup_app(config, lifespan):
         conf_threshold: Optional[float] = None
         roi_extractor: Optional[str] = None
         template_id: Optional[str] = None
+        segment_mode: Optional[str] = None
+        digit_models: Optional[List[str]] = None
+        decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
 
     class TemplateCreateRequest(BaseModel):
@@ -141,7 +168,9 @@ def prepare_setup_app(config, lifespan):
         reference_image_base64: str
         image_width: int
         image_height: int
-        display_corners: List[List[float]]
+        display_corners: Optional[List[List[float]]] = None
+        segment_mode: Optional[str] = None
+        digit_corners: Optional[List[List[List[float]]]] = None
 
     class EvalRequest(BaseModel):
         eval: str
@@ -207,9 +236,14 @@ def prepare_setup_app(config, lifespan):
 
             cur.execute('''
                            INSERT OR IGNORE INTO settings
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
+                            islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit,
+                            max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode,
+                            digit_models, decimals, use_correctional_alg)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ''', (
-                               meter_name,0,125,0,125,20,7,False,False,False,1.0,None,"yolo",None,True
+                               meter_name, 0, 125, 0, 125, 20, 7, False, False, False,
+                               1.0, None, 'yolo', None, 'display', None, 3, True
                            ))
 
     def _normalize_source_type(source_type: str) -> str:
@@ -350,10 +384,25 @@ def prepare_setup_app(config, lifespan):
 
     @app.post("/api/templates", dependencies=[Depends(authenticate)])
     def create_template(payload: TemplateCreateRequest):
-        if len(payload.display_corners) != 4:
-            raise HTTPException(status_code=400, detail="display_corners must contain 4 points")
         if not payload.reference_image_base64:
             raise HTTPException(status_code=400, detail="reference_image_base64 is required")
+
+        segment_mode = (payload.segment_mode or "display").strip().lower()
+        if segment_mode not in {"display", "each_digit"}:
+            raise HTTPException(status_code=400, detail="Invalid segment_mode")
+
+        display_corners = payload.display_corners or []
+        digit_corners = payload.digit_corners or []
+
+        if segment_mode == "display":
+            if len(display_corners) != 4:
+                raise HTTPException(status_code=400, detail="display_corners must contain 4 points")
+        else:
+            if not digit_corners:
+                raise HTTPException(status_code=400, detail="digit_corners is required for each_digit mode")
+            for quad in digit_corners:
+                if len(quad) != 4:
+                    raise HTTPException(status_code=400, detail="digit_corners must contain quads with 4 points")
 
         try:
             img_bytes = base64.b64decode(payload.reference_image_base64)
@@ -365,11 +414,37 @@ def prepare_setup_app(config, lifespan):
         if reference_image is None:
             raise HTTPException(status_code=400, detail="Failed to decode reference image")
 
-        points = np.array(payload.display_corners, dtype=np.float32)
-        max_val = float(np.max(points))
-        if max_val <= 2.0:
-            points[:, 0] *= payload.image_width
-            points[:, 1] *= payload.image_height
+        def order_points(pts):
+            pts = np.array(pts, dtype=np.float32)
+            s = pts.sum(axis=1)
+            diff = np.diff(pts, axis=1).ravel()
+            top_left = pts[np.argmin(s)]
+            bottom_right = pts[np.argmax(s)]
+            top_right = pts[np.argmin(diff)]
+            bottom_left = pts[np.argmax(diff)]
+            return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
+
+        points = None
+        if display_corners and len(display_corners) == 4:
+            points = np.array(display_corners, dtype=np.float32)
+            if float(np.max(points)) <= 2.0:
+                points[:, 0] *= payload.image_width
+                points[:, 1] *= payload.image_height
+            points = order_points(points)
+
+        digit_points = None
+        if digit_corners:
+            digit_points = np.array(digit_corners, dtype=np.float32)
+            if float(np.max(digit_points)) <= 2.0:
+                digit_points[:, :, 0] *= payload.image_width
+                digit_points[:, :, 1] *= payload.image_height
+            digit_points = np.array([order_points(quad) for quad in digit_points], dtype=np.float32)
+
+        if points is None and digit_points is not None:
+            all_points = digit_points.reshape(-1, 2)
+            rect = cv2.minAreaRect(all_points)
+            box = cv2.boxPoints(rect)
+            points = order_points(box)
 
         width_a = np.linalg.norm(points[0] - points[1])
         width_b = np.linalg.norm(points[2] - points[3])
@@ -385,8 +460,11 @@ def prepare_setup_app(config, lifespan):
             "target_width": target_width,
             "target_height": target_height,
             "target_width_ext": target_width_ext,
-            "target_height_ext": target_height_ext
+            "target_height_ext": target_height_ext,
+            "segment_mode": segment_mode
         }
+        if digit_points is not None:
+            config_dict["digit_corners"] = digit_points.tolist()
 
         extractor_type = (payload.extractor or "").lower()
         if extractor_type not in {"orb", "static_rect"}:
@@ -774,20 +852,28 @@ def prepare_setup_app(config, lifespan):
         db.row_factory = sqlite3.Row
         cur = db.cursor()
         cur.execute(
-            "SELECT name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, use_correctional_alg "
+            "SELECT name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg "
             "FROM settings ORDER BY name"
         )
         out = [dict(row) for row in cur.fetchall()]
+        for row in out:
+            if row.get("digit_models"):
+                try:
+                    row["digit_models"] = json.loads(row["digit_models"])
+                except Exception:
+                    row["digit_models"] = None
         return {"settings": out}
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
     def create_settings(payload: SettingsRequest):
         db = db_connection()
         cur = db.cursor()
+        digit_models = json.dumps(payload.digit_models) if payload.digit_models is not None else None
+        decimals = payload.decimals if payload.decimals is not None else 3
         cur.execute(
-            "INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, use_correctional_alg) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.name, payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, payload.roi_extractor or "yolo", payload.template_id, 1 if payload.use_correctional_alg else 0),
+            "INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit, max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload.name, payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, payload.roi_extractor or "yolo", payload.template_id, payload.segment_mode or "display", digit_models, decimals, 1 if payload.use_correctional_alg else 0),
         )
         db.commit()
         return {"message": "Settings created"}
@@ -803,12 +889,15 @@ def prepare_setup_app(config, lifespan):
 
         roi_extractor = payload.roi_extractor or "yolo"
         template_id = payload.template_id
-        if roi_extractor not in {"orb"}:
+        if roi_extractor not in {"orb", "static_rect"}:
             template_id = None
+        segment_mode = payload.segment_mode or "display"
+        digit_models = json.dumps(payload.digit_models) if payload.digit_models is not None else None
+        decimals = payload.decimals if payload.decimals is not None else 3
 
         cur.execute(
-            "UPDATE settings SET threshold_low = ?, threshold_high = ?, threshold_last_low = ?, threshold_last_high = ?, islanding_padding = ?, segments = ?, rotated_180 = ?, shrink_last_3 = ?, extended_last_digit = ?, max_flow_rate = ?, conf_threshold = ?, roi_extractor = ?, template_id = ?, use_correctional_alg = ? WHERE name = ?",
-            (payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, roi_extractor, template_id, 1 if payload.use_correctional_alg else 0, name),
+            "UPDATE settings SET threshold_low = ?, threshold_high = ?, threshold_last_low = ?, threshold_last_high = ?, islanding_padding = ?, segments = ?, rotated_180 = ?, shrink_last_3 = ?, extended_last_digit = ?, max_flow_rate = ?, conf_threshold = ?, roi_extractor = ?, template_id = ?, segment_mode = ?, digit_models = ?, decimals = ?, use_correctional_alg = ? WHERE name = ?",
+            (payload.threshold_low, payload.threshold_high, payload.threshold_last_low, payload.threshold_last_high, payload.islanding_padding, payload.segments, 1 if payload.rotated_180 else 0, 1 if payload.shrink_last_3 else 0, 1 if payload.extended_last_digit else 0, payload.max_flow_rate, payload.conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, 1 if payload.use_correctional_alg else 0, name),
         )
         db.commit()
         return {"message": "Settings updated"}
@@ -1003,7 +1092,8 @@ def prepare_setup_app(config, lifespan):
                                WHERE e.name = w.name
                                ORDER BY id DESC
                                LIMIT 1),
-                              w.picture_data_bbox IS NOT NULL
+                              w.picture_data_bbox IS NOT NULL,
+                              (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1)
                        FROM watermeters w
                        WHERE w.setup = 1
                        """)
@@ -1012,7 +1102,8 @@ def prepare_setup_app(config, lifespan):
         for row in cursor.fetchall():
             th_digits = json.loads(row[4]) if row[4] else None
             has_bbox = bool(row[5])
-            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox))
+            decimals = row[6] if row[6] is not None else 3
+            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals))
 
         return {"watermeters": result}
 
@@ -1130,11 +1221,17 @@ def prepare_setup_app(config, lifespan):
     def get_settings(name: str):
         cursor = db_connection().cursor()
         cursor.execute(
-            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, use_correctional_alg FROM settings WHERE name = ?",
+            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg FROM settings WHERE name = ?",
             (name,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Thresholds not found")
+        digit_models = row[14]
+        if digit_models:
+            try:
+                digit_models = json.loads(digit_models)
+            except Exception:
+                digit_models = None
         return {
             "threshold_low": row[0],
             "threshold_high": row[1],
@@ -1149,19 +1246,24 @@ def prepare_setup_app(config, lifespan):
             "conf_threshold": row[10],
             "roi_extractor": row[11],
             "template_id": row[12],
-            "use_correctional_alg": row[13]
+            "segment_mode": row[13],
+            "digit_models": digit_models,
+            "decimals": row[15],
+            "use_correctional_alg": row[16]
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
     def set_settings(settings: SettingsRequest):
         db = db_connection()
         cursor = db.cursor()
+        digit_models = json.dumps(settings.digit_models) if settings.digit_models is not None else None
+        decimals = settings.decimals if settings.decimals is not None else 3
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1175,12 +1277,15 @@ def prepare_setup_app(config, lifespan):
                                             conf_threshold=excluded.conf_threshold,
                                             roi_extractor=excluded.roi_extractor,
                                             template_id=excluded.template_id,
+                                            segment_mode=excluded.segment_mode,
+                                            digit_models=excluded.digit_models,
+                                            decimals=excluded.decimals,
                                             use_correctional_alg=excluded.use_correctional_alg
             """,
             (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}
@@ -1189,12 +1294,14 @@ def prepare_setup_app(config, lifespan):
     def update_settings(name: str, settings: SettingsUpdateRequest):
         db = db_connection()
         cursor = db.cursor()
+        digit_models = json.dumps(settings.digit_models) if settings.digit_models is not None else None
+        decimals = settings.decimals if settings.decimals is not None else 3
         cursor.execute(
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1208,12 +1315,15 @@ def prepare_setup_app(config, lifespan):
                                             conf_threshold=excluded.conf_threshold,
                                             roi_extractor=excluded.roi_extractor,
                                             template_id=excluded.template_id,
+                                            segment_mode=excluded.segment_mode,
+                                            digit_models=excluded.digit_models,
+                                            decimals=excluded.decimals,
                                             use_correctional_alg=excluded.use_correctional_alg
             """,
             (name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
         )
         db.commit()
         return {"message": "Settings updated", "name": name}

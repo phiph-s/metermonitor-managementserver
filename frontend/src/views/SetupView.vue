@@ -1,14 +1,14 @@
 <template>
 
   <n-h2>Setup for {{ id }}</n-h2>
-  <n-steps :current="currentlyFocusedStep" :vertical="narrowScreen">
+  <n-steps class="setup-steps" :current="currentlyFocusedStep" :vertical="narrowScreen">
     <n-step
-      title="Segmentation"
-      style="max-width: 500px; cursor: pointer;"
+      title="Digit Extraction"
+      style="max-width: 500px;"
       @click="() => {if (currentlyFocusedStep !== 1 && currentStep > 0) {currentlyFocusedStep = 1;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 1) || (!narrowScreen)">
-        <div @click.stop>
+        <div @click.stop class="segmentation-panel">
         <SegmentationConfigurator
             :last-picture="lastPicture"
             :extended-last-digit="extendedLastDigit"
@@ -16,8 +16,10 @@
             :segments="segments"
             :rotated180="rotated180"
             :roi-extractor="roiExtractor"
+            :segment-mode="segmentMode"
             :capturing="capturing"
             :template-points="templatePoints"
+            :digit-quads="templateDigitQuads"
             :template-ready="templateReady"
             :template-saving="templateSaving"
             :evaluation="evaluation"
@@ -29,31 +31,22 @@
             @next="onSegmentationNext"
             @recapture="() => setupStore.triggerCapture(id)"
             @update-template-points="(points) => { templatePoints.value = points }"
-            @save-template="() => setupStore.saveTemplate(id, templatePoints.value)"
+            @update-digit-quads="(quads) => { templateDigitQuads.value = quads }"
+            @save-template="() => setupStore.saveTemplate(id, templatePoints.value, templateDigitQuads.value)"
         />
         </div>
-        <br>
-        <n-tooltip trigger="hover" placement="bottom">
-          <template #trigger>
-            <n-button circle type="info" ghost>
-              <template #icon>
-                <n-icon><HelpOutlineFilled /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div style="max-width: 300px">
-            <img src="@/assets/example_segmentation.png" alt="Example segmentation" style="max-width: 100%"/>
-            <ul>
-              <li>Numbers should be entirely visible</li>
-              <li>One number per segement</li>
-            </ul>
-          </div>
-        </n-tooltip>
+        <div class="help-links">
+          <a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide</a>
+          ·
+          <a :href="docsLink('roi-extractors.md')" target="_blank" rel="noreferrer">ROI extractor details</a>
+          ·
+          <a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting</a>
+        </div>
       </div>
     </n-step>
     <n-step
-      title="Threshold Extraction"
-      style="max-width: 500px; cursor: pointer;"
+      title="Digit Isolation"
+      style="max-width: 500px;"
       @click="() => {if (currentlyFocusedStep !== 2  && currentStep > 1) {currentlyFocusedStep = 2;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 2) || (!narrowScreen && currentStep > 1)">
@@ -65,40 +58,32 @@
               :threshold_last="thresholdLast"
               :islanding_padding="islandingPadding"
               :segments="segments"
+              :digit-models="digitModels"
+              :decimals="decimals"
               :loading="loading"
               :searching-thresholds="searchingThresholds"
               :threshold-search-result="thresholdSearchResult"
               @update="(data) => setupStore.updateThresholds(data, id)"
+              @update-digit-models="(models) => setupStore.updateDigitModels(models, id)"
+              @update-decimals="(value) => setupStore.updateDecimals(value, id)"
               @reevaluate="() => setupStore.redoDigitEval(id) && setupStore.clearEvaluationExamples(id)"
               @next="() =>  {setupStore.nextStep(2); currentlyFocusedStep = 3}"
               @search-thresholds="(steps) => setupStore.searchThresholds(id, steps)"
           />
         </div>
-        <br>
-        <n-tooltip trigger="hover" placement="bottom">
-          <template #trigger>
-            <n-button circle type="info" ghost>
-              <template #icon>
-                <n-icon><HelpOutlineFilled /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div style="max-width: 300px">
-            <img src="@/assets/example_thresholds.png" alt="Example segmentation" style="max-width: 100%"/>
-            <ul>
-              <li>Select thresholds to extract numbers</li>
-              <li>Numbers should be clearly visible</li>
-              <li>Use the "evaluate" button to test the values</li>
-              <li>Use "extraction padding" to remove as much artifacts as possible</li>
-            </ul>
-          </div>
-        </n-tooltip>
+        <div class="help-links">
+          <a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Setup guide</a>
+          ·
+          <a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Threshold reference</a>
+          ·
+          <a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting</a>
+        </div>
       </div>
     </n-step>
     <n-step
-      title="Evaluation Preview"
+      title="Evaluation Settings"
       v-if="lastPicture"
-      style="max-width: 500px; cursor: pointer;"
+      style="max-width: 500px;"
       @click="() => {if (currentlyFocusedStep !== 3 && currentStep > 2) {currentlyFocusedStep = 3;}}"
     >
       <div v-if="(narrowScreen && currentlyFocusedStep === 3) || (!narrowScreen && currentStep > 2)">
@@ -120,23 +105,13 @@
               :randomExamples="randomExamples"
           />
         </div>
-         <br>
-        <n-tooltip trigger="hover" placement="bottom">
-          <template #trigger>
-            <n-button circle type="info" ghost>
-              <template #icon>
-                <n-icon><HelpOutlineFilled /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div style="max-width: 300px">
-            <ul>
-              <li>Check the values the model extracted</li>
-              <li>Reflections and uneven lighting can cause issues</li>
-              <li>Manually enter the correct value without a decimal point or leading zeros</li>
-            </ul>
-          </div>
-        </n-tooltip>
+        <div class="help-links">
+          <a :href="docsLink('user-guide.md')" target="_blank" rel="noreferrer">Evaluation workflow</a>
+          ·
+          <a :href="docsLink('configuration.md')" target="_blank" rel="noreferrer">Confidence &amp; correction settings</a>
+          ·
+          <a :href="docsLink('troubleshooting.md')" target="_blank" rel="noreferrer">Troubleshooting</a>
+        </div>
       </div>
     </n-step>
   </n-steps>
@@ -145,8 +120,7 @@
 
 <script setup>
 import {onMounted, onUnmounted, computed, ref, watch} from 'vue';
-import { NSteps, NStep, NButton, NH2, NTooltip, NIcon } from 'naive-ui';
-import { HelpOutlineFilled } from '@vicons/material';
+import { NSteps, NStep, NH2 } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { useWatermeterStore } from '@/stores/watermeterStore';
@@ -180,15 +154,22 @@ const extendedLastDigit = computed(() => settings.value?.extended_last_digit || 
 const last3DigitsNarrow = computed(() => settings.value?.shrink_last_3 || false);
 const rotated180 = computed(() => settings.value?.rotated_180 || false);
 const roiExtractor = computed(() => settings.value?.roi_extractor || 'yolo');
+const segmentMode = computed(() => settings.value?.segment_mode || 'display');
 const templateId = computed(() => settings.value?.template_id || null);
 const templateReady = computed(() => !!templateId.value);
-const isTemplateExtractor = (value) => ['orb'].includes(value);
+const isTemplateExtractor = (value) => ['orb', 'static_rect'].includes(value);
 const maxFlowRate = computed(() => settings.value?.max_flow_rate || 0);
 const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
+const digitModels = computed(() => settings.value?.digit_models || null);
+const decimals = computed(() => Number.isFinite(settings.value?.decimals) ? settings.value.decimals : 3);
+const docsBase = 'https://metermonitor-io.github.io/#/';
+const docsLink = (page) => `${docsBase}${page}`;
 
 const templatePoints = ref([]);
+const templateDigitQuads = ref([]);
 const pendingTemplateSave = ref(false);
+let evaluationEventHandler = null;
 
 watch(templateId, async (next) => {
   if (!next) return;
@@ -199,29 +180,40 @@ watch(templateId, async (next) => {
     x: point[0] / template.image_width,
     y: point[1] / template.image_height
   }));
-});
+  if (template?.config?.digit_corners?.length) {
+    templateDigitQuads.value = template.config.digit_corners.map((quad) =>
+      quad.map((point) => ({
+        x: point[0] / template.image_width,
+        y: point[1] / template.image_height
+      }))
+    );
+  } else {
+    templateDigitQuads.value = [];
+  }
+}, { immediate: true });
 
 watch(
-  () => roiExtractor.value,
-  (nextExtractor, prevExtractor) => {
+  () => [roiExtractor.value, segmentMode.value],
+  ([nextExtractor, nextMode], [prevExtractor, prevMode]) => {
     if (!isTemplateExtractor(nextExtractor)) {
       pendingTemplateSave.value = false;
       return;
     }
-    if (nextExtractor !== prevExtractor) {
+    if (nextExtractor !== prevExtractor || nextMode !== prevMode) {
       pendingTemplateSave.value = true;
     }
   }
 );
 
 watch(
-  () => [pendingTemplateSave.value, templateId.value, templateSaving.value, templatePoints.value, lastPicture.value],
-  ([pending, nextTemplateId, saving, points, picture]) => {
+  () => [pendingTemplateSave.value, templateId.value, templateSaving.value, templatePoints.value, templateDigitQuads.value, lastPicture.value, segmentMode.value, segments.value],
+  ([pending, nextTemplateId, saving, points, digitQuads, picture, mode, segmentCount]) => {
     if (!pending || saving || nextTemplateId) return;
     if (!picture?.picture?.data) return;
-    if (!points || points.length !== 4) return;
+    if (mode === 'display' && (!points || points.length !== 4)) return;
+    if (mode === 'each_digit' && (!digitQuads || digitQuads.length !== segmentCount)) return;
     pendingTemplateSave.value = false;
-    setupStore.saveTemplate(id, points);
+    setupStore.saveTemplate(id, points, digitQuads);
   },
   { deep: true }
 );
@@ -245,6 +237,13 @@ const onSegmentationNext = () => {
 onMounted(() => {
   setupStore.reset();
   setupStore.getData(id);
+  evaluationEventHandler = (event) => {
+    const meterName = event?.detail?.name;
+    if (meterName && meterName === id) {
+      setupStore.getData(id);
+    }
+  };
+  window.addEventListener('meter-evaluation-updated', evaluationEventHandler);
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
@@ -255,6 +254,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (evaluationEventHandler) {
+    window.removeEventListener('meter-evaluation-updated', evaluationEventHandler);
+  }
   if (headerControls) {
     headerControls.resetHeader();
   }
@@ -267,4 +269,31 @@ watch(loading, (next) => {
 </script>
 
 <style scoped>
+.segmentation-panel {
+  width: 100%;
+  max-width: 500px;
+}
+
+.help-links {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.help-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.help-links a:hover {
+  text-decoration: underline;
+}
+
+.setup-steps :deep(.n-step) {
+  cursor: default;
+}
+
+.setup-steps :deep(.n-step-header) {
+  cursor: pointer;
+}
 </style>

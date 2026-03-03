@@ -1,12 +1,48 @@
 <template>
-  <n-card>
+  <n-card size="small">
     <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Base Settings</span><span style="opacity: 0.7"> - change immediately</span>
+      </div>
+    </template>
+
+    <n-flex justify="space-between" align="center" style="padding-top: 16px;">
+     <n-tooltip>
+        <template #trigger>
+          Number of Digits
+        </template>
+        <span>Number of segments (2-10)</span>
+      </n-tooltip>
+      <n-input-number
+        data-testid="segments-input"
+        :value="segments"
+        @update:value="handleUpdate('segments', $event)"
+        :max="10"
+        :min="2"
+        :disabled="loading">
+      </n-input-number>
+    </n-flex>
+
+  </n-card><br>
+  <n-card size="small">
+    <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Extract</span><span style="opacity: 0.7"> all digits</span>
+      </div>
       <div class="image-container">
         <TemplatePointEditor
-          v-if="isTemplateExtractor && lastPicture"
+          v-if="isTemplateExtractor && lastPicture && segmentModeValue === 'display'"
           :image-src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data"
           :points="templatePoints"
           @update:points="emits('updateTemplatePoints', $event)"
+        />
+        <TemplateDigitEditor
+          v-else-if="isTemplateExtractor && lastPicture && segmentModeValue === 'each_digit'"
+          :image-src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data"
+          :quads="digitQuads"
+          :segments="segments"
+          :display-corners="templatePoints"
+          @update:quads="emits('updateDigitQuads', $event)"
         />
         <img v-else-if="lastPicture && lastPicture.picture.data_bbox" :src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data_bbox" alt="Watermeter" />
         <img v-else-if="lastPicture" :src="'data:image/'+lastPicture.picture.format+';base64,' + lastPicture.picture.data" alt="Watermeter" />
@@ -30,15 +66,7 @@
         </div>
       </div>
     </template>
-    <br>
-
-    <n-alert v-if="noBoundingBox && !isTemplateExtractor" title="No bounding box found" type="warning" style="margin-bottom: 15px;">
-      Without a bounding box the segmentation will not work. Adjust the camera angle or lighting and try again.
-    </n-alert>
-    <n-alert v-if="reevaluateError" title="Extraction failed" type="warning" style="margin-bottom: 15px;">
-      {{ reevaluateError }}
-    </n-alert>
-
+    <div style="padding-top: 16px;"></div>
     <ROIExtractorSelect
       :value="currentExtractor"
       :options="extractorOptions"
@@ -50,62 +78,99 @@
       @update:value="handleUpdate('roiExtractor', $event)"
       @save-template="emits('saveTemplate')"
     />
-    <br>
-    <n-tooltip>
-      <template #trigger>
-        Segments
-      </template>
-      <span>Number of segments (2-10)</span>
-    </n-tooltip>
-    <n-input-number
-      :value="segments"
-      @update:value="handleUpdate('segments', $event)"
-      :max="10"
-      :min="2"
-      :disabled="loading">
-    </n-input-number><br>
-    <n-flex align="center" :size="8" class="padd">
-      <n-switch
-        :value="extendedLastDigit"
-        @update:value="handleUpdate('extendedLastDigit', $event)"
-        :disabled="loading"
-      />
-      <n-tooltip>
-        <template #trigger>
-          <span class="tooltip-trigger">
+    <template v-if="isTemplateExtractor" >
+      <br>
+      <n-flex align="center" :size="8" class="padd">
+        <n-switch
+          :value="segmentModeValue"
+          :checked-value="'each_digit'"
+          :unchecked-value="'display'"
+          @update:value="handleUpdate('segmentMode', $event)"
+          :disabled="loading"
+        >
+          <template #icon>
+            <n-icon size="16"><GridViewOutlined /></n-icon>
+          </template>
+        </n-switch>
+        <n-tooltip>
+          <template #trigger>
+            <span class="tooltip-trigger">
+              <span>Segmentation mode: <b>{{ segmentModeValue === 'each_digit' ? 'Each digit' : 'Display (auto)' }}</b></span>
+            </span>
+          </template>
+          <span>Display: select one large region.<br>Each digit: select one quad per digit.</span>
+        </n-tooltip>
+      </n-flex>
+    </template>
+    <div v-if="!isEachDigitMode">
+      <br>
+      <n-flex align="center" :size="8" class="padd">
+        <n-switch
+          :value="extendedLastDigit"
+          @update:value="handleUpdate('extendedLastDigit', $event)"
+          :disabled="loading || isEachDigitMode"
+        >
+          <template #icon>
             <n-icon size="16"><AddCircleOutlineOutlined /></n-icon>
-            <span>Extended last digit</span>
-          </span>
-        </template>
-        <span>Enable if the last digits display is bigger<br>compared to the other digits</span>
-      </n-tooltip>
-    </n-flex>
-    <n-flex align="center" :size="8" class="padd">
-      <n-switch
-        :value="last3DigitsNarrow"
-        @update:value="handleUpdate('last3DigitsNarrow', $event)"
-        :disabled="loading"
-      />
-      <n-tooltip>
-        <template #trigger>
-          <span class="tooltip-trigger">
+          </template>
+        </n-switch>
+        <n-tooltip>
+          <template #trigger>
+            <span class="tooltip-trigger">
+              <span>Extended last digit</span>
+            </span>
+          </template>
+          <span>Enable if the last digits display is bigger<br>compared to the other digits</span>
+        </n-tooltip>
+      </n-flex>
+      <n-flex align="center" :size="8" class="padd">
+        <n-switch
+          :value="last3DigitsNarrow"
+          @update:value="handleUpdate('last3DigitsNarrow', $event)"
+          :disabled="loading || isEachDigitMode"
+        >
+          <template #icon>
             <n-icon size="16"><CompressOutlined /></n-icon>
-            <span>Last 3 digits are narrow</span>
-          </span>
-        </template>
-        <span>Enable if the last three digits displays are narrower<br>compared to the other digits</span>
-      </n-tooltip>
-    </n-flex>
+          </template>
+        </n-switch>
+        <n-tooltip>
+          <template #trigger>
+            <span class="tooltip-trigger">
+              <span>Last 3 digits are narrow</span>
+            </span>
+          </template>
+          <span>Enable if the last three digits displays are narrower<br>compared to the other digits</span>
+        </n-tooltip>
+      </n-flex>
+    </div>
+  </n-card><br>
+  <n-card size="small">
+    <template #cover>
+      <div class="card-title">
+        <span style="font-weight: bolder;">Post-processing</span><span style="opacity: 0.7"> & Preview</span>
+      </div>
+    </template>
+    <div style="padding-top: 16px;"></div>
+    <n-alert v-if="noBoundingBox && !isTemplateExtractor" title="No bounding box found" type="warning" style="margin-bottom: 15px;">
+      Without a bounding box the segmentation will not work. Adjust the camera angle or lighting and try again.
+    </n-alert>
+    <n-alert v-if="reevaluateError" title="Extraction failed" type="warning" style="margin-bottom: 15px;">
+      {{ reevaluateError }}
+    </n-alert>
+
     <n-flex align="center" :size="8">
       <n-switch
         :value="rotated180"
         @update:value="handleUpdate('rotated180', $event)"
         :disabled="loading"
-      />
+      >
+        <template #icon>
+          <n-icon size="16"><RotateRightOutlined /></n-icon>
+        </template>
+      </n-switch>
       <n-tooltip>
         <template #trigger>
           <span class="tooltip-trigger">
-            <n-icon size="16"><RotateRightOutlined /></n-icon>
             <span>180° rotated</span>
           </span>
         </template>
@@ -113,9 +178,14 @@
       </n-tooltip>
     </n-flex>
     <template #action v-if="evaluation">
-      <n-flex justify="space-around" :size="[0,0]">
-        <div v-for="base64 in evaluation['colored_digits']" :key="base64">
-          <img :style="`width:calc(350px / ${evaluation['colored_digits'].length});`" class="digit"  :src="'data:image/png;base64,' + base64" alt="D"/>
+      <n-flex justify="space-around" :size="[0,0]" v-if="evaluation['colored_digits']">
+        <div v-for="[index, base64] in evaluation['colored_digits'].entries()" :key="base64" style="text-align: center;">
+          <img :style="`width:calc(350px / ${evaluation['colored_digits'].length});`" class="digit"  :src="'data:image/png;base64,' + base64" alt="D"/><br>
+          <n-flex justify="center" style="position: relative; top: -10px;">
+            <div class="digit-handle">
+              {{index + 1}}
+            </div>
+          </n-flex>
         </div>
       </n-flex><br>
       <n-flex justify="end">
@@ -131,15 +201,17 @@
 </template>
 
 <script setup>
-import {NCard, NFlex, NInputNumber, NSwitch, NDivider, NButton, NTooltip, NAlert, NSpin, NIcon} from 'naive-ui';
+import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon} from 'naive-ui';
 import {defineProps, defineEmits, computed} from 'vue';
 import {
   AddCircleOutlineOutlined,
   CameraAltOutlined,
   CompressOutlined,
-  RotateRightOutlined
+  RotateRightOutlined,
+  GridViewOutlined
 } from '@vicons/material';
 import TemplatePointEditor from '@/components/TemplatePointEditor.vue';
+import TemplateDigitEditor from '@/components/TemplateDigitEditor.vue';
 import ROIExtractorSelect from '@/components/ROIExtractorSelect.vue';
 
 const props = defineProps([
@@ -151,7 +223,9 @@ const props = defineProps([
     'evaluation',
     'rotated180',
     'roiExtractor',
+    'segmentMode',
     'templatePoints',
+    'digitQuads',
     'templateReady',
     'templateSaving',
     'capturing',
@@ -159,7 +233,7 @@ const props = defineProps([
     'noBoundingBox',
     'reevaluateError'
 ]);
-const emits = defineEmits(['update', 'next', 'recapture', 'updateTemplatePoints', 'saveTemplate']);
+const emits = defineEmits(['update', 'next', 'recapture', 'updateTemplatePoints', 'updateDigitQuads', 'saveTemplate']);
 
 const formattedTimestamp = computed(() => {
   if (!props.timestamp) return '';
@@ -176,14 +250,15 @@ const formattedTimestamp = computed(() => {
 
 const extractorOptions = [
   { label: 'AUTO - Use the YOLOv11 AI-model', value: 'yolo' },
-  { label: 'BYPASS - Directly segment received images', value: 'bypass' },
-  { label: 'ORB - (Very fast) Template-based extractor', value: 'orb' },
-  { label: 'STATIC RECT - Fixed rectangle (no alignment)', value: 'static_rect' }
+  { label: 'BYPASS - Use whole image', value: 'bypass' },
+  { label: 'ORB - Feature-aligning extractor', value: 'orb' },
+  { label: 'STATIC RECT - Fixed rectangle', value: 'static_rect' }
 ];
 
 const currentExtractor = computed(() => props.roiExtractor || 'yolo');
 const isTemplateExtractor = computed(() => ['orb', 'static_rect'].includes(currentExtractor.value));
-const hasTemplatePoints = computed(() => Array.isArray(props.templatePoints) && props.templatePoints.length === 4);
+const segmentModeValue = computed(() => props.segmentMode || 'display');
+const isEachDigitMode = computed(() => segmentModeValue.value === 'each_digit');
 
 const handleUpdate = (field, value) => {
   emits('update', {
@@ -191,7 +266,8 @@ const handleUpdate = (field, value) => {
     extendedLastDigit: field === 'extendedLastDigit' ? value : props.extendedLastDigit,
     last3DigitsNarrow: field === 'last3DigitsNarrow' ? value : props.last3DigitsNarrow,
     rotated180: field === 'rotated180' ? value : props.rotated180,
-    roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor
+    roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor,
+    segmentMode: field === 'segmentMode' ? value : props.segmentMode
   });
 };
 
@@ -222,6 +298,13 @@ const handleUpdate = (field, value) => {
   backdrop-filter: blur(4px);
 }
 
+.card-title{
+  text-transform: uppercase;
+  width:100%;
+  background-color: rgba(125, 125, 125, 0.1);
+  text-align: center;
+}
+
 .recapture-button {
   position: absolute;
   bottom: 8px;
@@ -246,5 +329,21 @@ const handleUpdate = (field, value) => {
 .padd {
   margin-bottom: 10px;
 }
+
+.digit-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(30, 30, 30, 0.8);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: white;
+  z-index: 2;
+}
+
 
 </style>

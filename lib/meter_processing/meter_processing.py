@@ -38,7 +38,13 @@ class MeterPredictor:
 
         # Load digit classifier ONNX model
         self.digit_session = ort.InferenceSession(
-            'models/best_model.onnx',
+            'models/rotating_digit.onnx',
+            sess_options=sess_options,
+            providers=['CPUExecutionProvider']
+        )
+
+        self.segment_session = ort.InferenceSession(
+            'models/segment_digit.onnx',
             sess_options=sess_options,
             providers=['CPUExecutionProvider']
         )
@@ -52,6 +58,8 @@ class MeterPredictor:
 
         self.digit_input_name = self.digit_session.get_inputs()[0].name
         self.digit_output_name = self.digit_session.get_outputs()[0].name
+        self.segment_input_name = self.segment_session.get_inputs()[0].name
+        self.segment_output_name = self.segment_session.get_outputs()[0].name
 
         # Force garbage collection after loading models
         gc.collect()
@@ -59,7 +67,7 @@ class MeterPredictor:
         print(f"[MeterPredictor] YOLO input: {self.yolo_input_name}")
         print(f"[MeterPredictor] Digit classifier input: {self.digit_input_name}")
 
-    def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None):
+    def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None, segment_mode="display"):
         """
         Predicts the water meter reading on a single image:
           - Runs YOLO detection for oriented bounding box (OBB)
@@ -87,50 +95,24 @@ class MeterPredictor:
         if extractor_instance is not None:
             extractor = extractor_instance
         elif roi_extractor == "bypass":
-            extractor = BypassExtractor()
+            extractor = BypassExtractor(rotated_180=rotated_180)
         else:
             extractor = YOLOExtractor(self.yolo_session, self.yolo_input_name, extended_last_digit=extended_last_digit)
-        rotated_cropped_img, rotated_cropped_img_ext, boundingboxed_image = extractor.extract(input_image)
-        if rotated_cropped_img is None:
+        digits, boundingboxed_image = extractor.extract_segments(
+            input_image,
+            segments=segments,
+            extended_last_digit=extended_last_digit,
+            shrink_last_3=shrink_last_3,
+            segment_mode=segment_mode,
+        )
+        if not digits or len(digits) == 0:
             self.last_error = getattr(extractor, "last_error", None) or "No result found"
             return [], [], None, None
 
         if use_templated_extractor and rotated_180:
-            rotated_cropped_img = cv2.rotate(rotated_cropped_img, cv2.ROTATE_180)
-            if rotated_cropped_img_ext is not None:
-                rotated_cropped_img_ext = cv2.rotate(rotated_cropped_img_ext, cv2.ROTATE_180)
-
-        # Split the cropped meter into segments vertical parts for classification
-        if segments < 2:
-            self.last_error = "Segments must be at least 2"
-            return [], [], None, None
-        part_width = rotated_cropped_img.shape[1] // segments
-
-        base64s = []
-        digits = []
-
-        last_x = 0
-
-        # cut out the segments
-        for i in range(segments):
-            if shrink_last_3 and i >= segments - 3:
-                t_part_width = int(part_width * 0.8)
-            elif shrink_last_3:
-                t_part_width = int(((part_width * segments) - (3 * part_width * 0.8)) / (segments - 3))
-            else:
-                t_part_width = part_width
-
-            # Extract segment from last_x to last_x + t_part_width
-            part = rotated_cropped_img[:, last_x: last_x + t_part_width]
-
-            if extended_last_digit and i == segments - 1 and rotated_cropped_img_ext is not None:
-                ext_end_x = rotated_cropped_img_ext.shape[1]
-                ext_start_x = max(ext_end_x - t_part_width, 0)
-                part = rotated_cropped_img_ext[:, ext_start_x:ext_end_x]
-            last_x = last_x + t_part_width
-
-            # Convert segment to base64 string for storage
-            digits.append(part)
+            digits = [cv2.rotate(digit, cv2.ROTATE_180) for digit in digits]
+            if segment_mode == "display":
+                digits = list(reversed(digits))
 
         # Adjust brightness of each image
         mean_brightnesses = [np.mean(img) for img in digits]
@@ -145,6 +127,7 @@ class MeterPredictor:
         digits = adjusted_images
 
         # Convert to base64 for temporary storage
+        base64s = []
         for part in digits:
             # Store cutouts as RGB to avoid BGR/RGB channel confusion.
             if len(part.shape) == 3:
@@ -240,19 +223,25 @@ class MeterPredictor:
         return img_str, img_norm
 
     # use the classifier to predict the digit, returns the top 3 predictions with their confidence
-    def predict_digit(self, digit):
+    def predict_digit(self, digit, model_type=None):
         # Perform prediction using ONNX model
-        predictions = self.digit_session.run(
-            [self.digit_output_name],
-            {self.digit_input_name: digit}
-        )[0]
+        if model_type == "segment":
+            predictions = self.segment_session.run(
+                [self.segment_output_name],
+                {self.segment_input_name: digit}
+            )[0]
+        else:
+            predictions = self.digit_session.run(
+                [self.digit_output_name],
+                {self.digit_input_name: digit}
+            )[0]
 
         top3 = np.argsort(predictions[0])[-3:][::-1]
         pairs = [(self.class_names[i], float(predictions[0][i])) for i in top3]
 
         return pairs
 
-    def predict_digits(self, digits):
+    def predict_digits(self, digits, model_types=None):
         """
         Digits are np arrays
         predict the digits
@@ -260,7 +249,10 @@ class MeterPredictor:
         # Predict each digit
         predicted_digits = []
         for i,digit in enumerate(digits):
-            digit = self.predict_digit(digit)
+            model_type = None
+            if model_types and i < len(model_types):
+                model_type = model_types[i]
+            digit = self.predict_digit(digit, model_type=model_type)
             predicted_digits.append(digit)
 
         # Clean up memory after batch prediction
@@ -268,7 +260,7 @@ class MeterPredictor:
 
         return predicted_digits
 
-    def apply_thresholds(self, digits, thresholds, thresholds_last, islanding_padding):
+    def apply_thresholds(self, digits, thresholds, thresholds_last, islanding_padding, decimals=3):
         """
         Digits are np arrays
         apply black/white thresholding to each digit
@@ -281,8 +273,9 @@ class MeterPredictor:
 
         threshold_low = thresholds[0]
         threshold_high = thresholds[1]
+        last_count = max(0, min(int(decimals or 0), len(digits)))
         for i, digit in enumerate(digits):
-            if i >= len(digits) - 3:
+            if last_count > 0 and i >= len(digits) - last_count:
                 threshold_low = thresholds_last[0]
                 threshold_high = thresholds_last[1]
             img_str, digit = self.apply_threshold(digit, threshold_low, threshold_high, islanding_padding)

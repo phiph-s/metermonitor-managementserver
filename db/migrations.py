@@ -40,6 +40,9 @@ def run_migrations(db_file):
                            conf_threshold      REAL DEFAULT NULL,
                            roi_extractor       TEXT DEFAULT 'yolo',
                            template_id         TEXT DEFAULT NULL,
+                           segment_mode        TEXT DEFAULT 'display',
+                           digit_models        TEXT DEFAULT NULL,
+                           decimals            INTEGER DEFAULT 3,
                            use_correctional_alg BOOLEAN DEFAULT true,
                            FOREIGN KEY (name) REFERENCES watermeters (name)
                        )
@@ -325,6 +328,33 @@ def run_migrations(db_file):
                 ADD COLUMN template_id TEXT DEFAULT NULL
             ''')
             print("[MIGRATION] Added 'template_id' column to 'settings' table")
+
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'segment_mode' not in columns:
+            cursor.execute('''
+                ALTER TABLE settings
+                ADD COLUMN segment_mode TEXT DEFAULT 'display'
+            ''')
+            print("[MIGRATION] Added 'segment_mode' column to 'settings' table")
+
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'digit_models' not in columns:
+            cursor.execute('''
+                ALTER TABLE settings
+                ADD COLUMN digit_models TEXT DEFAULT NULL
+            ''')
+            print("[MIGRATION] Added 'digit_models' column to 'settings' table")
+
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'decimals' not in columns:
+            cursor.execute('''
+                ALTER TABLE settings
+                ADD COLUMN decimals INTEGER DEFAULT 3
+            ''')
+            print("[MIGRATION] Added 'decimals' column to 'settings' table")
 
         # add a column "denied_digits" to the evaluations table ([FALSE, FALSE, ...] as JSON string with length of digits as default)
         cursor.execute("PRAGMA table_info(evaluations)")

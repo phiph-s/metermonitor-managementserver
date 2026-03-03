@@ -196,7 +196,10 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
             # Also insert default settings
             cursor.execute('''
                 INSERT OR IGNORE INTO settings
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
+                 islanding_padding, segments, rotated_180, shrink_last_3, extended_last_digit,
+                 max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
                 name,
                 0,
@@ -212,6 +215,9 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                 None,
                 "yolo",
                 None,
+                "display",
+                None,
+                3,
                 True
             ))
             meter_is_new = True
@@ -231,7 +237,7 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
         # Process the image
         try:
             result = reevaluate_latest_picture(db_file, name, meter_predictor,
-                                               config, publish=publish, mqtt_client=mqtt_client)
+                                               config, publish=publish, mqtt_client=mqtt_client, notify_realtime=publish)
             if result and len(result) >= 3:
                 boundingboxed_image = result[2]
             else:
@@ -287,6 +293,7 @@ def capture_and_process_source(config, db_file, source_row, meter_predictor, mqt
             cursor.execute("UPDATE sources SET last_success_ts = ?, last_error = NULL WHERE id = ?", (timestamp, source_row['id']))
             conn.commit()
         print(f"[CAPTURE] Successfully captured and processed source {source_row['name']}")
+        return timestamp
     except Exception as e:
         error_msg = str(e)
         print(f"[CAPTURE] Failed to capture source {source_row['name']}: {error_msg}")
@@ -308,3 +315,4 @@ def capture_and_process_source(config, db_file, source_row, meter_predictor, mqt
                     (error_msg, now, source_row['id'])
                 )
             conn.commit()
+        raise

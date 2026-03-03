@@ -2,9 +2,9 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "develop" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "develop" ]
 
 env:
   REGISTRY: ghcr.io
@@ -35,11 +35,42 @@ jobs:
           run: |
             VERSION=$(jq -r '.version' config.json)
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
         - name: Docker meta
           id: meta
           uses: docker/metadata-action@v5
           with:
             images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+        - name: Determine image tags
+          id: tags
+          shell: bash
+          run: |
+            VERSION="${{ steps.extract_info.outputs.version }}"
+            BRANCH="${{ steps.extract_info.outputs.branch }}"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+            if [ "${BRANCH}" = "master" ]; then
+              {
+                echo "tags<<EOF"
+                echo "${IMAGE}:latest"
+                echo "${IMAGE}:${VERSION}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+            elif [ "${BRANCH}" = "develop" ]; then
+              {
+                echo "tags<<EOF"
+                echo "${IMAGE}:develop"
+                echo "${IMAGE}:${VERSION}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+            else
+              {
+                echo "tags<<EOF"
+                echo "${IMAGE}:${VERSION}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+            fi
 
         - name: Set up QEMU
           uses: docker/setup-qemu-action@v3
@@ -64,9 +95,7 @@ jobs:
             push: true
             cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
             cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
-            tags: |
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.extract_info.outputs.version }}
+            tags: ${{ steps.tags.outputs.tags }}
             labels: |
               org.opencontainers.image.title="Meter Monitor"
               org.opencontainers.image.description="Integrate ESP32 based meter monitor cams with Home Assistant using AI"

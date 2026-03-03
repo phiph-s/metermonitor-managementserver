@@ -135,11 +135,15 @@
           </template>
         </n-grid>
 
-        <n-alert type="info" v-if="selectedType === 'mqtt'">
-          MQTT sources don’t need manual setup.
-          <br />
-          When an device publishes images to the configured broker/topic, it will appear under “Waiting for setup”.
-        </n-alert>
+        <div v-if="selectedType === 'mqtt'">
+          <n-alert type="info" >
+            MQTT sources don’t need manual setup.
+            <br />
+            When a device publishes images to the configured broker/topic, it will appear under “Waiting for setup”.
+          </n-alert><br>
+          <MQTTSetupHelper :config="config"/>
+        </div>
+
       </n-form>
 
 
@@ -172,9 +176,11 @@ import {
   NProgress, useMessage,
 } from 'naive-ui';
 import { apiService } from '@/services/api';
+import MQTTSetupHelper from "@/views/MQTTSetupHelper.vue";
 
 const props = defineProps({
   show: { type: Boolean, default: false },
+  config: { type: Object, default: null },
 });
 
 const emit = defineEmits(['update:show', 'created']);

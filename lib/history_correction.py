@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 
-def correct_value(db_file: str, name: str, new_eval, allow_negative_correction = False, max_flow_rate = 1.0, use_full_correction = True):
+def correct_value(db_file: str, name: str, new_eval, allow_negative_correction = False, max_flow_rate = 1.0, use_full_correction = True, decimals: int = 3):
     # get last evaluation
     reject = False
     metadata = {
@@ -41,6 +41,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         second_row = rows[1] if len(rows) > 1 else None
 
         last_value = str(row[0]).zfill(segments)
+        if len(last_value) > segments:
+            last_value = last_value[-segments:]
         last_time = datetime.fromisoformat(row[1])
         last_confidence = row[2]
         try:
@@ -83,6 +85,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         fallback_digit_count = 0
         prediction_rank_used_counts = [0, 0, 0]
 
+        scale = 10 ** int(decimals or 0)
+
         # Light correction mode: only replace r/rotation and denied digits with last value
         if not use_full_correction:
             for i, lastChar in enumerate(last_value):
@@ -124,7 +128,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
 
             # No flow rate or positive flow checks in light mode
             delta_raw = int(correctedValue) - int(last_value)
-            delta_m3 = delta_raw / 1000.0
+            delta_m3 = delta_raw / float(scale)
             flow_rate_m3min = delta_m3 / time_diff
             flow_rate_m3h = flow_rate_m3min * 60.0
             metadata["delta_raw"] = delta_raw
@@ -198,6 +202,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                 elif allow_negative_correction:
                     if second_row:
                         pre_last_value = str(second_row[0]).zfill(segments)
+                        if len(pre_last_value) > segments:
+                            pre_last_value = pre_last_value[-segments:]
                         # if last history entry has a very low confidence, but current confidence is high enough
                         # compare with the second last entry
                         if last_confidence < 0.2 and tempConfidence > 0.50 and \
@@ -227,7 +233,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
 
         # get the flow rate and check if it is within the limits
         delta_raw = int(correctedValue) - int(last_value)
-        delta_m3 = delta_raw / 1000.0
+        delta_m3 = delta_raw / float(scale)
         flow_rate_m3min = delta_m3 / time_diff
         flow_rate_m3h = flow_rate_m3min * 60.0
         metadata["delta_raw"] = delta_raw

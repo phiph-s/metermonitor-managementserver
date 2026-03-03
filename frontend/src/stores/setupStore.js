@@ -114,6 +114,20 @@ export const useSetupStore = defineStore('setup', () => {
     await watermeterStore.updateSettings(meterId);
   }
 
+  const updateDigitModels = async (models, meterId) => {
+    const watermeterStore = useWatermeterStore();
+
+    watermeterStore.settings.digit_models = Array.isArray(models) ? models : null;
+    await watermeterStore.updateSettings(meterId);
+  };
+
+  const updateDecimals = async (value, meterId) => {
+    const watermeterStore = useWatermeterStore();
+    const nextValue = Math.max(0, Math.floor(value ?? 0));
+    watermeterStore.settings.decimals = nextValue;
+    await watermeterStore.updateSettings(meterId);
+  };
+
   const updateSegmentationSettings = async (data, meterId) => {
     const watermeterStore = useWatermeterStore();
 
@@ -123,15 +137,18 @@ export const useSetupStore = defineStore('setup', () => {
     const previousExtractor = watermeterStore.settings.roi_extractor || 'yolo';
     const nextExtractor = data.roiExtractor || previousExtractor;
     const isTemplateExtractor = (value) => ['orb', 'static_rect'].includes(value);
+    const previousSegmentMode = watermeterStore.settings.segment_mode || 'display';
+    const nextSegmentMode = data.segmentMode || previousSegmentMode;
 
     watermeterStore.settings.segments = data.segments;
     watermeterStore.settings.extended_last_digit = data.extendedLastDigit;
     watermeterStore.settings.shrink_last_3 = data.last3DigitsNarrow;
     watermeterStore.settings.rotated_180 = data.rotated180;
     watermeterStore.settings.roi_extractor = nextExtractor;
+    watermeterStore.settings.segment_mode = nextSegmentMode;
 
-    if (nextExtractor !== previousExtractor) {
-      if (!isTemplateExtractor(nextExtractor) || previousExtractor !== nextExtractor) {
+    if (nextExtractor !== previousExtractor || nextSegmentMode !== previousSegmentMode) {
+      if (!isTemplateExtractor(nextExtractor) || previousExtractor !== nextExtractor || nextSegmentMode !== previousSegmentMode) {
         watermeterStore.settings.template_id = null;
         templateData.value = null;
       }
@@ -298,7 +315,7 @@ export const useSetupStore = defineStore('setup', () => {
     }
   };
 
-  const saveTemplate = async (meterId, points) => {
+  const saveTemplate = async (meterId, points, digitQuads) => {
     if (templateSaving.value) return;
     templateSaving.value = true;
     try {
@@ -312,6 +329,7 @@ export const useSetupStore = defineStore('setup', () => {
         console.error('No reference image available');
         return;
       }
+      const segmentMode = watermeterStore.settings.segment_mode || 'display';
       let normalizedPoints = Array.isArray(points) && points.length === 4 ? points : null;
       if (!normalizedPoints && templateData.value?.config?.display_corners?.length === 4) {
         const corners = templateData.value.config.display_corners;
@@ -322,7 +340,7 @@ export const useSetupStore = defineStore('setup', () => {
           y: point[1] / imageHeight
         }));
       }
-      if (!normalizedPoints) {
+      if (!normalizedPoints && segmentMode === 'display') {
         normalizedPoints = [
           { x: 0.2, y: 0.2 },
           { x: 0.8, y: 0.2 },
@@ -330,14 +348,47 @@ export const useSetupStore = defineStore('setup', () => {
           { x: 0.2, y: 0.8 }
         ];
       }
+
+      let normalizedDigitQuads = null;
+      if (segmentMode === 'each_digit') {
+        if (Array.isArray(digitQuads) && digitQuads.length > 0) {
+          normalizedDigitQuads = digitQuads;
+        } else if (templateData.value?.config?.digit_corners?.length) {
+          const corners = templateData.value.config.digit_corners;
+          const imageWidth = templateData.value.image_width || 1;
+          const imageHeight = templateData.value.image_height || 1;
+          normalizedDigitQuads = corners.map((quad) => quad.map((point) => ({
+            x: point[0] / imageWidth,
+            y: point[1] / imageHeight
+          })));
+        }
+        if (!normalizedDigitQuads) {
+          console.error('No digit quads available for each_digit mode');
+          return;
+        }
+        if (normalizedDigitQuads.length !== watermeterStore.settings.segments) {
+          console.error('Digit quad count does not match segments');
+          return;
+        }
+      }
       const payload = {
         name: meterId,
         extractor: watermeterStore.settings.roi_extractor,
         reference_image_base64: picture.data,
         image_width: picture.width,
         image_height: picture.height,
-        display_corners: normalizedPoints.map((point) => [point.x, point.y])
+        segment_mode: segmentMode,
       };
+      if (normalizedPoints) {
+        payload.display_corners = normalizedPoints.map((point) => [point.x, point.y]);
+      } else {
+        payload.display_corners = [];
+      }
+      if (normalizedDigitQuads) {
+        payload.digit_corners = normalizedDigitQuads.map((quad) =>
+          quad.map((point) => [point.x ?? point[0], point.y ?? point[1]])
+        );
+      }
       const result = await apiService.postJson('api/templates', payload);
       if (!result?.id) {
         console.error('Template creation failed');
@@ -419,6 +470,8 @@ export const useSetupStore = defineStore('setup', () => {
     updateMaxFlow,
     updateConfThreshold,
     updateUseCorrection,
+    updateDigitModels,
+    updateDecimals,
     updateSegmentationSettings,
     clearEvaluationExamples,
     reevaluate,

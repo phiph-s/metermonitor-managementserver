@@ -40,7 +40,7 @@
                       orange: evaluation.denied_digits[i] && evaluation.predictions[i][0][0] != digit
                     }"
                   >
-                    <template v-if="i === evaluation.th_digits.length-4">
+                    <template v-if="isDecimalSeparatorIndex(i, evaluation.th_digits.length)">
                       {{ digit }},
                     </template>
                     <template v-else>
@@ -164,8 +164,24 @@ const props = defineProps({
   name: {
     type: String,
     default: ''
+  },
+  decimals: {
+    type: Number,
+    default: 3
   }
 });
+
+const getDecimals = (digitLength) => {
+  const maxDigits = Number.isFinite(digitLength) ? digitLength : 0;
+  const raw = Number.isFinite(props.decimals) ? props.decimals : 3;
+  return Math.max(0, Math.min(raw, maxDigits));
+};
+
+const isDecimalSeparatorIndex = (idx, digitLength) => {
+  const decimals = getDecimals(digitLength);
+  if (decimals === 0) return false;
+  return idx === digitLength - decimals - 1;
+};
 
 const getColor = (value) => {
   // Clamp value between 0 and 1 and map it to a hue (red to green)

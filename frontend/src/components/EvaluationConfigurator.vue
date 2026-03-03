@@ -1,7 +1,12 @@
 <template>
   <template v-if="evaluation">
-    <n-card>
-      <n-flex justify="space-around" size="large">
+    <n-card size="small">
+      <template #cover>
+        <div class="card-title">
+          <span style="font-weight: bolder;">Result preview</span><span style="opacity: 0.7"> & Benchmark</span>
+        </div>
+      </template>
+      <n-flex justify="space-around" size="large" style="padding-top: 16px;">
         <img :style="`width:calc(250px / ${evaluation['colored_digits'].length});`" class="digit theme-revert th" v-for="[i,base64] in evaluation['th_digits'].entries()" :key="i + 'c'" :src="'data:image/png;base64,' + base64" alt="D"/>
       </n-flex>
       <n-flex justify="space-around" size="large">
@@ -68,8 +73,13 @@
         </n-collapse-item>
       </n-collapse>
     </n-card><br>
-    <n-card>
-      <n-flex>
+    <n-card size="small">
+      <template #cover>
+        <div class="card-title">
+          <span style="font-weight: bolder;">Evaluation Settings</span><span style="opacity: 0.7"></span>
+        </div>
+      </template>
+      <n-flex style="padding-top: 16px;">
         <div style="max-width: 30%">
             <n-tooltip>
               <template #trigger>
@@ -332,4 +342,11 @@ function getColor(value) {
 .th {
   border: 1px solid rgba(255, 255, 255, 0.16);
 }
+.card-title{
+  text-transform: uppercase;
+  width:100%;
+  background-color: rgba(125, 125, 125, 0.1);
+  text-align: center;
+}
+
 </style>

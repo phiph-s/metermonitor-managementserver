@@ -11,6 +11,93 @@ class ROIExtractor(ABC):
         """Return (cropped, cropped_ext, boundingboxed_image) or (None, None, None) on failure."""
         raise NotImplementedError
 
+    def extract_segments(self, input_image, segments, extended_last_digit=False, shrink_last_3=False, segment_mode="display"):
+        """
+        Extract and segment digits from input image.
+
+        Default implementation extracts the full display ROI and then splits
+        it into segments (display mode). Subclasses can override to provide
+        custom per-digit extraction.
+        """
+        if segment_mode not in {"display", "each_digit"}:
+            segment_mode = "display"
+
+        cropped, cropped_ext, boundingboxed_image = self.extract(input_image)
+        if cropped is None:
+            return [], boundingboxed_image
+
+        digits = self.segment_display(
+            cropped,
+            cropped_ext,
+            segments=segments,
+            extended_last_digit=extended_last_digit,
+            shrink_last_3=shrink_last_3,
+        )
+        return digits, boundingboxed_image
+
+    @staticmethod
+    def segment_display(cropped, cropped_ext, segments, extended_last_digit=False, shrink_last_3=False):
+        """Split a cropped display image into digit segments."""
+        if segments < 2:
+            return []
+        if cropped is None or cropped.shape[1] <= 0:
+            return []
+
+        part_width = cropped.shape[1] // segments
+        if part_width <= 0:
+            return []
+
+        digits = []
+        last_x = 0
+        for i in range(segments):
+            if shrink_last_3 and i >= segments - 3:
+                t_part_width = int(part_width * 0.8)
+            elif shrink_last_3:
+                t_part_width = int(((part_width * segments) - (3 * part_width * 0.8)) / (segments - 3))
+            else:
+                t_part_width = part_width
+
+            part = cropped[:, last_x:last_x + t_part_width]
+
+            if extended_last_digit and i == segments - 1 and cropped_ext is not None:
+                ext_end_x = cropped_ext.shape[1]
+                ext_start_x = max(ext_end_x - t_part_width, 0)
+                part = cropped_ext[:, ext_start_x:ext_end_x]
+
+            last_x = last_x + t_part_width
+            digits.append(part)
+
+        return digits
+
+    @staticmethod
+    def estimate_quad_size(corners):
+        """Estimate target size from 4 corner points."""
+        width_a = np.linalg.norm(corners[0] - corners[1])
+        width_b = np.linalg.norm(corners[2] - corners[3])
+        height_a = np.linalg.norm(corners[0] - corners[3])
+        height_b = np.linalg.norm(corners[1] - corners[2])
+        target_width = int(round(max(width_a, width_b)))
+        target_height = int(round(max(height_a, height_b)))
+        if target_width <= 0 or target_height <= 0:
+            return 0, 0
+        return target_width, target_height
+
+    @staticmethod
+    def warp_quad(image, corners, target_width=None, target_height=None):
+        """Warp a quadrilateral into a rectangular image."""
+        if target_width is None or target_height is None:
+            target_width, target_height = ROIExtractor.estimate_quad_size(corners)
+        if target_width <= 0 or target_height <= 0:
+            return None
+        dst_corners = np.array([
+            [0, 0],
+            [target_width - 1, 0],
+            [target_width - 1, target_height - 1],
+            [0, target_height - 1]
+        ], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(corners, dst_corners)
+        return cv2.warpPerspective(image, M, (target_width, target_height))
+
 
 class ROIExtractorTemplated(ROIExtractor):
     """
