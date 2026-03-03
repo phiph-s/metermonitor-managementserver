@@ -51,25 +51,25 @@ jobs:
             IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
 
             if [ "${BRANCH}" = "master" ]; then
-              cat <<EOF >> "$GITHUB_OUTPUT"
-tags<<TAGSET
-${IMAGE}:latest
-${IMAGE}:${VERSION}
-TAGSET
-EOF
+              {
+                echo "tags<<EOF"
+                echo "${IMAGE}:latest"
+                echo "${IMAGE}:${VERSION}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
             elif [ "${BRANCH}" = "develop" ]; then
-              cat <<EOF >> "$GITHUB_OUTPUT"
-tags<<TAGSET
-${IMAGE}:develop
-${IMAGE}:${VERSION}
-TAGSET
-EOF
+              {
+                echo "tags<<EOF"
+                echo "${IMAGE}:develop"
+                echo "${IMAGE}:${VERSION}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
             else
-              cat <<EOF >> "$GITHUB_OUTPUT"
-tags<<TAGSET
-${IMAGE}:${VERSION}
-TAGSET
-EOF
+              {
+                echo "tags<<EOF"
+                echo "${IMAGE}:${VERSION}"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
             fi
 
         - name: Set up QEMU
