@@ -180,6 +180,9 @@ def prepare_setup_app(config, lifespan):
         value: int
         timestamp: str
 
+    class SetReadValueRequest(BaseModel):
+        value: int
+
     class DatasetUpload(BaseModel):
         name: str
         labels: List[str]
@@ -1328,6 +1331,17 @@ def prepare_setup_app(config, lifespan):
         )
         db.commit()
         return {"message": "Settings updated", "name": name}
+
+    @app.post("/api/watermeters/{name}/set-read-value", dependencies=[Depends(authenticate)])
+    def post_set_read_value(name: str, data: SetReadValueRequest):
+        """Manually set the current meter reading to correct the correction algorithm baseline."""
+        timestamp = datetime.now().isoformat()
+        add_history_entry(config['dbfile'], name, data.value, 1, 0.0, timestamp, config, manual=True)
+        db = db_connection()
+        cursor = db.cursor()
+        cursor.execute("UPDATE evaluations SET outdated = true WHERE name = ?", (name,))
+        db.commit()
+        return {"message": "Read value set"}
 
     @app.post("/api/watermeters/{name}/search_thresholds", dependencies=[Depends(authenticate)])
     def search_thresholds(name: str, request: ThresholdSearchRequest):

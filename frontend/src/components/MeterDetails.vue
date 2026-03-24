@@ -113,7 +113,13 @@
       <br><br>
     </template>
 
-    <div class="settings-title">Settings</div>
+    <div class="settings-title">
+      <span>Settings</span>
+      <n-button text size="small" @click="settingsModalOpen = true">
+        <template #icon><n-icon><EditOutlined /></n-icon></template>
+        Edit
+      </n-button>
+    </div>
     <div class="settings-grid">
       <div class="setting-chip">
         <n-icon><TuneOutlined /></n-icon>
@@ -195,6 +201,12 @@
     </div>
   </div>
 
+  <MeterSettingsModal
+    v-model:show="settingsModalOpen"
+    :meter-id="id"
+    @saved="store.fetchAll(id)"
+  />
+
   <n-modal v-model:show="editRoiOpen" preset="card" title="Edit ROI" style="width: 720px;">
     <div v-if="editRoiLoading" class="modal-loading">
       <n-spin size="small" />
@@ -255,8 +267,10 @@ import {
   DownloadOutlined,
   WarningAmberOutlined,
   ErrorOutlineOutlined,
-  RefreshOutlined
+  RefreshOutlined,
+  EditOutlined
 } from '@vicons/material';
+import MeterSettingsModal from '@/components/MeterSettingsModal.vue';
 import WifiStatus from "@/components/WifiStatus.vue";
 import {useWatermeterStore} from "@/stores/watermeterStore";
 import SourceCollapse from "@/components/SourceCollapse.vue";
@@ -276,6 +290,7 @@ const store = useWatermeterStore();
 const dialog = useDialog();
 const emit = defineEmits(['resetToSetup', 'deleteMeter', 'clearEvaluations', 'downloadDataset', 'deleteDataset', 'triggerCapture']);
 const showBbox = ref(true);
+const settingsModalOpen = ref(false);
 const editRoiOpen = ref(false);
 const editRoiLoading = ref(false);
 const editRoiSaving = ref(false);
@@ -549,6 +564,9 @@ const formattedTimestamp = computed(() => {
 }
 
 .settings-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-top: 12px;
   margin-bottom: 6px;
   font-size: 12px;
