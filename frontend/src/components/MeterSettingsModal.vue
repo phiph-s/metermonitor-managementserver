@@ -63,7 +63,7 @@
         <div class="section-title">Set read value</div>
         <div class="section-desc">
           Manually set the current meter reading to get the correction algorithm back on track.
-          This adds a manual entry to the history and marks all evaluations for re-check.
+          This adds a manual entry to the history and marks all evaluations as outdated.
         </div>
         <n-flex style="margin-top: 10px;" align="center">
           <n-input-number
@@ -152,12 +152,35 @@ const save = async () => {
   if (saving.value) return;
   saving.value = true;
   try {
-    store.settings.max_flow_rate = draft.max_flow_rate;
-    store.settings.conf_threshold = draft.conf_threshold;
-    store.settings.rotated_180 = draft.rotated_180;
-    store.settings.extended_last_digit = draft.extended_last_digit;
-    store.settings.shrink_last_3 = draft.shrink_last_3;
-    await store.updateSettings(props.meterId);
+    // Build full payload: keep all threshold/segmentation fields from the store untouched,
+    // only override the fields exposed in this modal.
+    const s = store.settings;
+    await apiService.put(`api/watermeters/${props.meterId}/settings`, {
+      threshold_low: s.threshold_low,
+      threshold_high: s.threshold_high,
+      threshold_last_low: s.threshold_last_low,
+      threshold_last_high: s.threshold_last_high,
+      islanding_padding: s.islanding_padding,
+      segments: s.segments,
+      roi_extractor: s.roi_extractor,
+      template_id: s.template_id,
+      segment_mode: s.segment_mode,
+      use_correctional_alg: s.use_correctional_alg,
+      digit_models: s.digit_models,
+      decimals: s.decimals,
+      // Fields editable in this modal:
+      max_flow_rate: draft.max_flow_rate,
+      conf_threshold: draft.conf_threshold,
+      rotated_180: draft.rotated_180,
+      extended_last_digit: draft.extended_last_digit,
+      shrink_last_3: draft.shrink_last_3,
+    });
+    // Sync store to reflect saved changes (no full refetch needed for these fields)
+    s.max_flow_rate = draft.max_flow_rate;
+    s.conf_threshold = draft.conf_threshold;
+    s.rotated_180 = draft.rotated_180;
+    s.extended_last_digit = draft.extended_last_digit;
+    s.shrink_last_3 = draft.shrink_last_3;
     message.success('Settings saved.');
     emit('saved');
     showModel.value = false;
