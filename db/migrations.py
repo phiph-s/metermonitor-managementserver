@@ -1,3 +1,4 @@
+from lib.log import log
 import sqlite3
 import json
 from datetime import datetime
@@ -128,7 +129,7 @@ def run_migrations(db_file):
                 ALTER TABLE evaluations
                 ADD COLUMN outdated BOOLEAN DEFAULT 0
             ''')
-            print("[MIGRATION] Added 'outdated' column to 'evaluations' table")
+            log("[MIGRATION] Added 'outdated' column to 'evaluations' table")
             # re-read columns after altering
             cursor.execute("PRAGMA table_info(evaluations)")
             columns = [info[1] for info in cursor.fetchall()]
@@ -137,7 +138,7 @@ def run_migrations(db_file):
         # Only run if the legacy 'eval' column exists and new columns are not present yet
         new_cols_needed = {'colored_digits', 'th_digits', 'predictions', 'timestamp', 'result', 'total_confidence'}
         if 'eval' in columns and not new_cols_needed.intersection(set(columns)):
-            print("[MIGRATION] Starting evaluations table migration (eval JSON -> explicit columns)")
+            log("[MIGRATION] Starting evaluations table migration (eval JSON -> explicit columns)")
 
             # Create new table with desired schema (assumes original table had only 'name' and 'eval')
             cursor.execute('''
@@ -220,13 +221,13 @@ def run_migrations(db_file):
             cursor.execute("DROP TABLE evaluations")
             cursor.execute("ALTER TABLE evaluations_new RENAME TO evaluations")
             conn.commit()
-            print("[MIGRATION] Completed evaluations table migration")
+            log("[MIGRATION] Completed evaluations table migration")
 
         # Add auto-incrementing ID primary key to evaluations table
         cursor.execute("PRAGMA table_info(evaluations)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'id' not in columns:
-            print("[MIGRATION] Adding auto-incrementing ID primary key to evaluations table")
+            log("[MIGRATION] Adding auto-incrementing ID primary key to evaluations table")
 
             # Create new table with id as primary key
             cursor.execute('''
@@ -256,12 +257,12 @@ def run_migrations(db_file):
             cursor.execute("DROP TABLE evaluations")
             cursor.execute("ALTER TABLE evaluations_new RENAME TO evaluations")
             conn.commit()
-            print("[MIGRATION] Added ID primary key to evaluations table")
+            log("[MIGRATION] Added ID primary key to evaluations table")
         # Add auto-incrementing ID primary key to history table
         cursor.execute("PRAGMA table_info(history)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'id' not in columns:
-            print("[MIGRATION] Adding auto-incrementing ID primary key to history table")
+            log("[MIGRATION] Adding auto-incrementing ID primary key to history table")
 
             # Create new table with id as primary key
             cursor.execute('''
@@ -289,7 +290,7 @@ def run_migrations(db_file):
             cursor.execute("DROP TABLE history")
             cursor.execute("ALTER TABLE history_new RENAME TO history")
             conn.commit()
-            print("[MIGRATION] Added ID primary key to history table")
+            log("[MIGRATION] Added ID primary key to history table")
 
         # add column picture_data_bbox to watermeters table if it doesn't exist yet
         cursor.execute("PRAGMA table_info(watermeters)")
@@ -299,7 +300,7 @@ def run_migrations(db_file):
                 ALTER TABLE watermeters
                 ADD COLUMN picture_data_bbox BLOB
             ''')
-            print("[MIGRATION] Added 'picture_data_bbox' column to 'watermeters' table")
+            log("[MIGRATION] Added 'picture_data_bbox' column to 'watermeters' table")
 
         # add settings column conf_threshold to settings table if it doesn't exist yet
         cursor.execute("PRAGMA table_info(settings)")
@@ -309,7 +310,7 @@ def run_migrations(db_file):
                 ALTER TABLE settings
                 ADD COLUMN conf_threshold REAL DEFAULT NULL
             ''')
-            print("[MIGRATION] Added 'conf_threshold' column to 'settings' table")
+            log("[MIGRATION] Added 'conf_threshold' column to 'settings' table")
 
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -318,7 +319,7 @@ def run_migrations(db_file):
                 ALTER TABLE settings
                 ADD COLUMN roi_extractor TEXT DEFAULT 'yolo'
             ''')
-            print("[MIGRATION] Added 'roi_extractor' column to 'settings' table")
+            log("[MIGRATION] Added 'roi_extractor' column to 'settings' table")
 
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -327,7 +328,7 @@ def run_migrations(db_file):
                 ALTER TABLE settings
                 ADD COLUMN template_id TEXT DEFAULT NULL
             ''')
-            print("[MIGRATION] Added 'template_id' column to 'settings' table")
+            log("[MIGRATION] Added 'template_id' column to 'settings' table")
 
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -336,7 +337,7 @@ def run_migrations(db_file):
                 ALTER TABLE settings
                 ADD COLUMN segment_mode TEXT DEFAULT 'display'
             ''')
-            print("[MIGRATION] Added 'segment_mode' column to 'settings' table")
+            log("[MIGRATION] Added 'segment_mode' column to 'settings' table")
 
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -345,7 +346,7 @@ def run_migrations(db_file):
                 ALTER TABLE settings
                 ADD COLUMN digit_models TEXT DEFAULT NULL
             ''')
-            print("[MIGRATION] Added 'digit_models' column to 'settings' table")
+            log("[MIGRATION] Added 'digit_models' column to 'settings' table")
 
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -354,7 +355,7 @@ def run_migrations(db_file):
                 ALTER TABLE settings
                 ADD COLUMN decimals INTEGER DEFAULT 3
             ''')
-            print("[MIGRATION] Added 'decimals' column to 'settings' table")
+            log("[MIGRATION] Added 'decimals' column to 'settings' table")
 
         # add a column "denied_digits" to the evaluations table ([FALSE, FALSE, ...] as JSON string with length of digits as default)
         cursor.execute("PRAGMA table_info(evaluations)")
@@ -379,7 +380,7 @@ def run_migrations(db_file):
                 denied_list = [False] * length
                 denied_json = json.dumps(denied_list)
                 cursor.execute("UPDATE evaluations SET denied_digits = ? WHERE name = ?", (denied_json, name))
-            print("[MIGRATION] Added 'denied_digits' column to 'evaluations' table and set default values")
+            log("[MIGRATION] Added 'denied_digits' column to 'evaluations' table and set default values")
 
 
         # add column th_digits_inverted to evaluations table if it doesn't exist yet
@@ -417,65 +418,65 @@ def run_migrations(db_file):
                     inverted_list = []
                 inverted_json = json.dumps(inverted_list)
                 cursor.execute("UPDATE evaluations SET th_digits_inverted = ? WHERE id = ?", (inverted_json, row_id))
-            print("[MIGRATION] Added 'th_digits_inverted' column to 'evaluations' table and populated values")
+            log("[MIGRATION] Added 'th_digits_inverted' column to 'evaluations' table and populated values")
 
         # add column "used_confidence" to history
         cursor.execute("PRAGMA table_info(history)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'used_confidence' not in columns:
             cursor.execute("ALTER TABLE history ADD COLUMN used_confidence REAL DEFAULT -1.0")
-            print("[MIGRATION] Added 'used_confidence' column to 'history' table")
+            log("[MIGRATION] Added 'used_confidence' column to 'history' table")
 
         # add column "used_confidence" to evaluations
         cursor.execute("PRAGMA table_info(evaluations)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'used_confidence' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN used_confidence REAL DEFAULT -1.0")
-            print("[MIGRATION] Added 'used_confidence' column to 'evaluations' table")
+            log("[MIGRATION] Added 'used_confidence' column to 'evaluations' table")
 
         # add correction metadata columns to evaluations
         cursor.execute("PRAGMA table_info(evaluations)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'flow_rate_m3h' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN flow_rate_m3h REAL")
-            print("[MIGRATION] Added 'flow_rate_m3h' column to 'evaluations' table")
+            log("[MIGRATION] Added 'flow_rate_m3h' column to 'evaluations' table")
         if 'delta_m3' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN delta_m3 REAL")
-            print("[MIGRATION] Added 'delta_m3' column to 'evaluations' table")
+            log("[MIGRATION] Added 'delta_m3' column to 'evaluations' table")
         if 'delta_raw' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN delta_raw INTEGER")
-            print("[MIGRATION] Added 'delta_raw' column to 'evaluations' table")
+            log("[MIGRATION] Added 'delta_raw' column to 'evaluations' table")
         if 'time_diff_min' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN time_diff_min REAL")
-            print("[MIGRATION] Added 'time_diff_min' column to 'evaluations' table")
+            log("[MIGRATION] Added 'time_diff_min' column to 'evaluations' table")
         if 'rejection_reason' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN rejection_reason TEXT")
-            print("[MIGRATION] Added 'rejection_reason' column to 'evaluations' table")
+            log("[MIGRATION] Added 'rejection_reason' column to 'evaluations' table")
         if 'negative_correction_applied' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN negative_correction_applied BOOLEAN")
-            print("[MIGRATION] Added 'negative_correction_applied' column to 'evaluations' table")
+            log("[MIGRATION] Added 'negative_correction_applied' column to 'evaluations' table")
         if 'fallback_digit_count' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN fallback_digit_count INTEGER")
-            print("[MIGRATION] Added 'fallback_digit_count' column to 'evaluations' table")
+            log("[MIGRATION] Added 'fallback_digit_count' column to 'evaluations' table")
         if 'digits_changed_vs_last' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN digits_changed_vs_last INTEGER")
-            print("[MIGRATION] Added 'digits_changed_vs_last' column to 'evaluations' table")
+            log("[MIGRATION] Added 'digits_changed_vs_last' column to 'evaluations' table")
         if 'digits_changed_vs_top_pred' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN digits_changed_vs_top_pred INTEGER")
-            print("[MIGRATION] Added 'digits_changed_vs_top_pred' column to 'evaluations' table")
+            log("[MIGRATION] Added 'digits_changed_vs_top_pred' column to 'evaluations' table")
         if 'prediction_rank_used_counts' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN prediction_rank_used_counts TEXT")
-            print("[MIGRATION] Added 'prediction_rank_used_counts' column to 'evaluations' table")
+            log("[MIGRATION] Added 'prediction_rank_used_counts' column to 'evaluations' table")
         if 'denied_digits_count' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN denied_digits_count INTEGER")
-            print("[MIGRATION] Added 'denied_digits_count' column to 'evaluations' table")
+            log("[MIGRATION] Added 'denied_digits_count' column to 'evaluations' table")
         if 'timestamp_adjusted' not in columns:
             cursor.execute("ALTER TABLE evaluations ADD COLUMN timestamp_adjusted BOOLEAN")
-            print("[MIGRATION] Added 'timestamp_adjusted' column to 'evaluations' table")
+            log("[MIGRATION] Added 'timestamp_adjusted' column to 'evaluations' table")
 
         # add column "used_confidence" to evaluations
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'use_correctional_alg' not in columns:
             cursor.execute("ALTER TABLE settings ADD COLUMN use_correctional_alg BOOLEAN DEFAULT true")
-            print("[MIGRATION] Added 'use_correctional_alg' column to 'settings' table")
+            log("[MIGRATION] Added 'use_correctional_alg' column to 'settings' table")

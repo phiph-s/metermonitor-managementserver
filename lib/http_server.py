@@ -1,3 +1,4 @@
+from lib.log import log
 import json
 import os
 import asyncio
@@ -55,7 +56,7 @@ def prepare_setup_app(config, lifespan):
     # Get singleton instance of meter predictor (shared with MQTT handler)
     meter_preditor = get_meter_predictor()
 
-    print("[HTTP] Using shared meter predictor singleton instance.")
+    log("[HTTP] Using shared meter predictor singleton instance.")
 
     # CORS Konfiguration
     app.add_middleware(
@@ -341,7 +342,7 @@ def prepare_setup_app(config, lifespan):
             if source_row and st in {'ha_camera', 'http'}:
                 capture_and_process_source(config, config['dbfile'], source_row, meter_preditor)
         except Exception as e:
-            print(f"[ERROR] Initial capture processing failed for source {payload.name}: {e}")
+            log(f"[ERROR] Initial capture processing failed for source {payload.name}: {e}")
 
         return {"message": "Source created"}
 
@@ -542,7 +543,7 @@ def prepare_setup_app(config, lifespan):
 
     @app.post("/api/sources/{source_id}/capture", dependencies=[Depends(authenticate)])
     def trigger_source_capture(source_id: int):
-        print(f"[HTTP] Manual capture trigger for source ID {source_id}")
+        log(f"[HTTP] Manual capture trigger for source ID {source_id}")
         db = db_connection()
         db.row_factory = sqlite3.Row
         cur = db.cursor()
@@ -731,7 +732,7 @@ def prepare_setup_app(config, lifespan):
                             states=states
                         )
                     except Exception as e:
-                        print(f"[FLASH-SUGGEST] error for {ent_id}: {e}")
+                        log(f"[FLASH-SUGGEST] error for {ent_id}: {e}")
                         suggested = None
 
                     cams.append({
@@ -1352,7 +1353,7 @@ def prepare_setup_app(config, lifespan):
         # Clamp steps to valid range
         steps = max(3, min(request.steps, 25))
 
-        print(f"[HTTP] Starting threshold search for {name} with steps={steps}")
+        log(f"[HTTP] Starting threshold search for {name} with steps={steps}")
 
         try:
             result = search_thresholds_for_meter(
@@ -1363,15 +1364,15 @@ def prepare_setup_app(config, lifespan):
             )
 
             if "error" in result:
-                print(f"[HTTP] Threshold search error: {result['error']}")
+                log(f"[HTTP] Threshold search error: {result['error']}")
             else:
-                print(f"[HTTP] Threshold search completed: threshold={result['threshold']}, "
+                log(f"[HTTP] Threshold search completed: threshold={result['threshold']}, "
                       f"threshold_last={result['threshold_last']}, avg_conf={result.get('avg_confidence', 0):.3f}")
 
             return result
 
         except Exception as e:
-            print(f"[HTTP] Threshold search failed: {str(e)}")
+            log(f"[HTTP] Threshold search failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Threshold search failed: {str(e)}")
 
     @app.post("/api/watermeters/{name}/evaluations/reevaluate", dependencies=[Depends(authenticate)])
@@ -1387,7 +1388,7 @@ def prepare_setup_app(config, lifespan):
             cursor = db.cursor()
             cursor.execute("UPDATE watermeters SET picture_data_bbox = ? WHERE name = ?", (bbox_base64, name))
             db.commit()
-            print(f"[HTTP] Re-evaluated latest picture for watermeter {name}")
+            log(f"[HTTP] Re-evaluated latest picture for watermeter {name}")
             return {"result": True}
 
         except Exception as e:
@@ -1409,7 +1410,7 @@ def prepare_setup_app(config, lifespan):
         affected = cursor.rowcount
         db.commit()
 
-        print(f"[HTTP] Marked {affected} evaluations as outdated for watermeter {name}")
+        log(f"[HTTP] Marked {affected} evaluations as outdated for watermeter {name}")
         return {"result": True, "count": affected}
 
     @app.post("/api/watermeters/{name}/evaluations/sample", dependencies=[Depends(authenticate)])
@@ -1601,7 +1602,7 @@ def prepare_setup_app(config, lifespan):
         cursor.execute("DELETE FROM evaluations WHERE name = ?", (name,))
         db.commit()
 
-        print(f"[HTTP] Deleted {count} evaluations for watermeter {name}")
+        log(f"[HTTP] Deleted {count} evaluations for watermeter {name}")
         return {"message": f"Deleted {count} evaluations", "count": count}
 
     # POST endpoint for adding an evaluation
@@ -1656,5 +1657,5 @@ def prepare_setup_app(config, lifespan):
 
     app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
-    print("[HTTP] Setup complete.")
+    log("[HTTP] Setup complete.")
     return app

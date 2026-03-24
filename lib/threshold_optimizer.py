@@ -1,3 +1,4 @@
+from lib.log import log
 """
 Threshold Optimizer Module
 
@@ -168,7 +169,7 @@ class ThresholdOptimizer:
 
                 images.append(img_array)
             except Exception as e:
-                print(f"[ThresholdOptimizer] Failed to decode image: {e}")
+                log(f"[ThresholdOptimizer] Failed to decode image: {e}")
                 continue
         return images
 
@@ -373,7 +374,7 @@ def search_thresholds_for_meter(
     Returns:
         Dictionary with optimal thresholds and confidence metrics
     """
-    with sqlite3.connect(db_file) as conn:
+    with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
 
         # Get the latest evaluation with colored digits

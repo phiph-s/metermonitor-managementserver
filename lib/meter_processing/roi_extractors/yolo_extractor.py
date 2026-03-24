@@ -1,3 +1,4 @@
+from lib.log import log
 import base64
 from io import BytesIO
 
@@ -16,7 +17,7 @@ class YOLOExtractor(ROIExtractor):
 
     def extract(self, input_image):
         self.last_error = None
-        print("[ROIExtractor (YOLO)] Running YOLO region-of-interest detection...")
+        log("[ROIExtractor (YOLO)] Running YOLO region-of-interest detection...")
 
         img_np = np.array(input_image)
         # Convert RGB (from PIL) to BGR for consistent OpenCV processing
@@ -48,7 +49,7 @@ class YOLOExtractor(ROIExtractor):
             outputs = self.yolo_session.run(None, {self.yolo_input_name: img_batch})
         except Exception as e:
             self.last_error = f"YOLO inference failed: {e}"
-            print(f"[ROIExtractor (YOLO)] {self.last_error}")
+            log(f"[ROIExtractor (YOLO)] {self.last_error}")
             return None, None, None
 
         output = outputs[0]
@@ -58,7 +59,7 @@ class YOLOExtractor(ROIExtractor):
         predictions = output[0]
         if predictions.shape[1] < 6:
             self.last_error = "Invalid YOLO output shape."
-            print(f"[ROIExtractor (YOLO)] {self.last_error}")
+            log(f"[ROIExtractor (YOLO)] {self.last_error}")
             return None, None, None
 
         if predictions.shape[1] == 6:
@@ -97,7 +98,7 @@ class YOLOExtractor(ROIExtractor):
         valid_mask = confidences > 0.15
         if not np.any(valid_mask):
             self.last_error = "No instances detected with confidence > 0.15"
-            print(f"[ROIExtractor (YOLO)] {self.last_error}")
+            log(f"[ROIExtractor (YOLO)] {self.last_error}")
             return None, None, None
 
         valid_predictions = predictions[valid_mask]
@@ -172,7 +173,7 @@ class YOLOExtractor(ROIExtractor):
 
         if max_width <= 0 or max_height <= 0:
             self.last_error = "Invalid ROI size."
-            print(f"[ROIExtractor (YOLO)] {self.last_error}")
+            log(f"[ROIExtractor (YOLO)] {self.last_error}")
             return None, None, None
 
         dst_points = np.array([
