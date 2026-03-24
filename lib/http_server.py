@@ -1335,10 +1335,18 @@ def prepare_setup_app(config, lifespan):
     @app.post("/api/watermeters/{name}/set-read-value", dependencies=[Depends(authenticate)])
     def post_set_read_value(name: str, data: SetReadValueRequest):
         """Manually set the current meter reading to correct the correction algorithm baseline."""
-        timestamp = datetime.now().isoformat()
-        add_history_entry(config['dbfile'], name, data.value, 1, 0.0, timestamp, config, manual=True)
         db = db_connection()
         cursor = db.cursor()
+        # Preserve target_brightness from the last history entry so the next
+        # reevaluation uses the same thresholding as before (0.0 would make digits black).
+        cursor.execute(
+            "SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1",
+            (name,)
+        )
+        row = cursor.fetchone()
+        target_brightness = row[0] if row and row[0] is not None else None
+        timestamp = datetime.now().isoformat()
+        add_history_entry(config['dbfile'], name, data.value, 1, target_brightness, timestamp, config, manual=True)
         cursor.execute("UPDATE evaluations SET outdated = true WHERE name = ?", (name,))
         db.commit()
         return {"message": "Read value set"}
