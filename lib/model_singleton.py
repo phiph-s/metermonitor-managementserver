@@ -1,3 +1,4 @@
+from lib.log import log
 """
 Singleton pattern for MeterPredictor to ensure only one instance exists.
 This saves 150-300MB of RAM by avoiding duplicate model loading.
@@ -19,21 +20,21 @@ class MeterPredictorSingleton:
     def get_predictor(self):
         """Get or create the singleton MeterPredictor instance."""
         if self._predictor is None:
-            print("[MeterPredictor] Initializing singleton instance...")
+            log("[MeterPredictor] Initializing singleton instance...")
             self._predictor = MeterPredictor()
             # Force garbage collection after loading models
             gc.collect()
-            print("[MeterPredictor] Singleton instance initialized and memory cleaned.")
+            log("[MeterPredictor] Singleton instance initialized and memory cleaned.")
         return self._predictor
 
     @classmethod
     def release(cls):
         """Release the predictor and free memory (useful for testing/reloading)."""
         if cls._predictor is not None:
-            print("[MeterPredictor] Releasing singleton instance...")
+            log("[MeterPredictor] Releasing singleton instance...")
             cls._predictor = None
             gc.collect()
-            print("[MeterPredictor] Singleton instance released.")
+            log("[MeterPredictor] Singleton instance released.")
 
 
 def get_meter_predictor():

@@ -1,3 +1,4 @@
+from lib.log import log
 import os
 import re
 import time
@@ -87,16 +88,16 @@ def main():
     # Get images from the current folder
     images = get_image_files()
     if not images:
-        print("No images matching the pattern were found.")
+        log("No images matching the pattern were found.")
         return
 
     total_images = len(images)
-    print(f"Found {total_images} images.")
+    log(f"Found {total_images} images.")
 
     if total_images > MAX_IMAGES:
         indices = np.linspace(0, total_images - 1, MAX_IMAGES, dtype=int)  # Select evenly spaced images
         images = [images[i] for i in indices]
-        print(f"Selecting {MAX_IMAGES} evenly spaced images from {total_images}.")
+        log(f"Selecting {MAX_IMAGES} evenly spaced images from {total_images}.")
 
     # Set up MQTT client with authentication
 
@@ -104,10 +105,10 @@ def main():
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)  # Set MQTT credentials
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
 
-    print(f"Sending first image immediately: {images[0]}")
+    log(f"Sending first image immediately: {images[0]}")
     msg = build_message(images[0], picture_number=1)
     client.publish(MQTT_TOPIC, json.dumps(msg))
-    print(f"Sent image 1: {images[0]}")
+    log(f"Sent image 1: {images[0]}")
 
     input("Press Enter to send the remaining images...")
 
@@ -115,9 +116,9 @@ def main():
         time.sleep(0.5)
         msg = build_message(image_file, picture_number=idx)
         client.publish(MQTT_TOPIC, json.dumps(msg))
-        print(f"Sent image {idx}/{len(images)}: {image_file}")
+        log(f"Sent image {idx}/{len(images)}: {image_file}")
 
-    print("All images have been sent.")
+    log("All images have been sent.")
 
 
 if __name__ == "__main__":

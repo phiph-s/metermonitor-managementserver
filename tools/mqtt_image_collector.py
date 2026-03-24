@@ -1,3 +1,4 @@
+from lib.log import log
 import paho.mqtt.client as mqtt
 import json
 import base64
@@ -19,16 +20,16 @@ os.makedirs(SAVE_FOLDER, exist_ok=True)
 # MQTT Callback when connected
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print("✅ Connected to MQTT Broker!")
+        log("✅ Connected to MQTT Broker!")
         client.subscribe(MQTT_TOPIC)  # Subscribe inside on_connect
-        print(f"📡 Subscribed to topic: {MQTT_TOPIC}")
+        log(f"📡 Subscribed to topic: {MQTT_TOPIC}")
     else:
-        print(f"⚠️ Connection failed with code {rc}")
+        log(f"⚠️ Connection failed with code {rc}")
 
 
 # MQTT Callback when a message is received
 def on_message(client, userdata, msg):
-    print(f"📩 Received message on {msg.topic}")  # Debugging
+    log(f"📩 Received message on {msg.topic}")  # Debugging
 
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
@@ -50,10 +51,10 @@ def on_message(client, userdata, msg):
             with open(file_path, "wb") as img_file:
                 img_file.write(image_bytes)
 
-            print(f"✅ Image saved: {file_path}")
+            log(f"✅ Image saved: {file_path}")
 
     except Exception as e:
-        print(f"⚠️ Error processing message: {e}")
+        log(f"⚠️ Error processing message: {e}")
 
 
 # MQTT Setup
@@ -66,5 +67,5 @@ client.on_message = on_message
 client.connect(MQTT_BROKER, MQTT_PORT, 60)
 
 # Start loop
-print("🚀 Listening for messages...")
+log("🚀 Listening for messages...")
 client.loop_forever()

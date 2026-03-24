@@ -1,3 +1,4 @@
+from lib.log import log
 """
 Static Rectangle ROI Extractor
 
@@ -121,7 +122,7 @@ class StaticRectExtractor(ROIExtractorTemplated):
         # Validate corners are within image bounds
         if (np.any(self.corners[:, 0] < 0) or np.any(self.corners[:, 0] >= img_width) or
             np.any(self.corners[:, 1] < 0) or np.any(self.corners[:, 1] >= img_height)):
-            print("[StaticRect] Corners are outside image bounds")
+            log("[StaticRect] Corners are outside image bounds")
             return None, None, None
 
         # Use perspective transform to warp the quadrilateral to a rectangle
@@ -168,7 +169,7 @@ class StaticRectExtractor(ROIExtractorTemplated):
         cv2.putText(boundingboxed_image, "Static Rect", label_pos,
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        print(f"[StaticRect] Cropped region: {self.target_width}x{self.target_height}")
+        log(f"[StaticRect] Cropped region: {self.target_width}x{self.target_height}")
 
         success, buffer = cv2.imencode(".png", boundingboxed_image)
         boundingboxed_image_b64 = base64.b64encode(buffer).decode("utf-8") if success else None

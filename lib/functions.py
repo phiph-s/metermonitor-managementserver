@@ -1,3 +1,4 @@
+from lib.log import log
 import base64
 import sqlite3
 import json
@@ -33,7 +34,7 @@ def _normalize_digit_models(raw_models, digit_count: int):
 
 
 def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: int = None):
-    with sqlite3.connect(db_file) as conn:
+    with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
 
         # Get eval from the database - either by offset or last
@@ -104,7 +105,7 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
         model_types = _normalize_digit_models(digit_models, len(digits))
 
         if len(thresholds) == 0:
-            print(f"[Eval ({name})] No thresholds found for {name}")
+            log(f"[Eval ({name})] No thresholds found for {name}")
             return {"error": "No thresholds found"}
         else:
             processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding, decimals=decimals)
@@ -120,7 +121,7 @@ def reevaluate_digits(db_file: str, name: str, meter_preditor, config, offset: i
 
 # This file reevaluates the latest picture of a watermeter and saves the result in the database.
 def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, publish: bool = False, skip_setup_overwriting = True, mqtt_client = None, notify_realtime: bool = False):
-    with sqlite3.connect(db_file) as conn:
+    with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
         meter_preditor.last_error = None
 
@@ -129,7 +130,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         row = cursor.fetchone()
         if not row:
             conn.commit()
-            print(f"[Eval ({name})] No picture found for {name}")
+            log(f"[Eval ({name})] No picture found for {name}")
             return None
         image_data = base64.b64decode(row[0])
         timestamp = row[1]
@@ -172,7 +173,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         extractor_instance = None
         if roi_extractor in {"orb", "static_rect"}:
             if not template_id:
-                print(f"[Eval ({name})] Template required for extractor '{roi_extractor}' but none is set.")
+                log(f"[Eval ({name})] Template required for extractor '{roi_extractor}' but none is set.")
                 meter_preditor.last_error = f"Template required for extractor '{roi_extractor}'."
                 return None
             try:
@@ -182,7 +183,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
                     from lib.meter_processing.roi_extractors.static_rect_extractor import StaticRectExtractor
                     extractor_instance = StaticRectExtractor.from_database(conn, template_id)
             except Exception as e:
-                print(f"[Eval ({name})] Failed to load template '{template_id}': {e}")
+                log(f"[Eval ({name})] Failed to load template '{template_id}': {e}")
                 meter_preditor.last_error = f"Failed to load template: {e}"
                 return None
 
@@ -199,7 +200,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         )
 
         if not result or len(result) == 0:
-            print(f"[Eval ({name})] No result found")
+            log(f"[Eval ({name})] No result found")
             if not meter_preditor.last_error:
                 meter_preditor.last_error = "No result found"
             return None
@@ -209,7 +210,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         prediction = []
         digits_inverted = []
         if len(thresholds) == 0:
-            print(f"[Eval ({name})] No thresholds found for {name}")
+            log(f"[Eval ({name})] No thresholds found for {name}")
         else:
             processed, digits, digits_inverted = meter_preditor.apply_thresholds(digits, thresholds, thresholds_last, islanding_padding, decimals=decimals)
             model_types = _normalize_digit_models(digit_models, len(digits))
@@ -396,7 +397,7 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
                 "timestamp": timestamp if isinstance(timestamp, str) else None
             })
 
-        print(f"[Eval ({name})] Prediction saved")
+        log(f"[Eval ({name})] Prediction saved")
         return target_brightness, confidence, boundingboxed_image
 
 # Function to publish the value to the MQTT broker, compatible with Home Assistant
@@ -408,7 +409,7 @@ def publish_value(mqtt_client, config, name, value, decimals=3):
         "value": int(value) / float(scale),
     }
     mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
-    print(f"[Eval/MQTT ({name})] Value published ({value} m³)")
+    log(f"[Eval/MQTT ({name})] Value published ({value} m³)")
 
 # Function to publish the registration to the MQTT broker, compatible with Home Assistant
 def publish_registration(mqtt_client, config, name, type):
@@ -430,11 +431,11 @@ def publish_registration(mqtt_client, config, name, type):
       }
     }
     mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
-    print(f"[Eval/MQTT ({name})] HA compatible Registration published")
+    log(f"[Eval/MQTT ({name})] HA compatible Registration published")
 
 # Function to add a history entry to the database, removing old entries
 def add_history_entry(db_file: str, name: str, value: int, confidence:int, target_brightness: float, timestamp: str, config, manual: bool = False):
-    with sqlite3.connect(db_file) as conn:
+    with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO history (name, value, confidence, target_brightness, timestamp, manual)
@@ -462,4 +463,4 @@ def add_history_entry(db_file: str, name: str, value: int, confidence:int, targe
         ''', (name, name, config['max_history']))
 
         conn.commit()
-        print(f"[Eval ({name})] History entry added")
+        log(f"[Eval ({name})] History entry added")
