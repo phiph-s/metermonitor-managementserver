@@ -437,6 +437,25 @@ def publish_registration(mqtt_client, config, name, type):
 def add_history_entry(db_file: str, name: str, value: int, confidence:int, target_brightness: float, timestamp: str, config, manual: bool = False):
     with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
+
+        # Before inserting, check if the previous history entry is from yesterday —
+        # if so, snapshot it into daily_history (one row per day, never pruned).
+        today = timestamp[:10]  # "YYYY-MM-DD"
+        cursor.execute('''
+            SELECT value, timestamp FROM history
+            WHERE name = ?
+            ORDER BY ROWID DESC LIMIT 1
+        ''', (name,))
+        prev = cursor.fetchone()
+        if prev:
+            prev_value, prev_ts = prev
+            prev_date = prev_ts[:10] if prev_ts else None
+            if prev_date and prev_date < today:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO daily_history (name, value, date)
+                    VALUES (?, ?, ?)
+                ''', (name, prev_value, prev_date))
+
         cursor.execute('''
             INSERT INTO history (name, value, confidence, target_brightness, timestamp, manual)
             VALUES (?,?,?,?,?,?)
@@ -449,7 +468,7 @@ def add_history_entry(db_file: str, name: str, value: int, confidence:int, targe
             manual
         ))
 
-        # remove old entries (keep 30)
+        # Remove old detailed entries beyond max_history limit
         cursor.execute('''
             DELETE FROM history
             WHERE name = ?

@@ -75,6 +75,16 @@ class ApiService {
       throw new Error(errorData.detail || `API request failed: ${response.status}`);
     }
   }
+
+  async putJson(url, data) {
+    const response = await this.put(url, data);
+    if (response.ok) {
+      return await response.json();
+    } else {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `API request failed: ${response.status}`);
+    }
+  }
 }
 
 export const apiService = new ApiService();

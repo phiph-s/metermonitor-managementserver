@@ -106,7 +106,7 @@
       </div>
     </template>
 
-    <MeterCharts :history="history" :unit="meterUnit" style="margin-top: 12px;" />
+    <MeterCharts :history="history" :daily-history="dailyHistory" :unit="meterUnit" style="margin-top: 12px;" />
     
     <template v-if="data && data['WiFi-RSSI']">
       <WifiStatus v-if="data && data['WiFi-RSSI']" :rssi="data['WiFi-RSSI']" />
@@ -300,7 +300,8 @@ const props = defineProps({
   settings: Object,
   id: String,
   downloadingDataset: Boolean,
-  history: Object
+  history: Object,
+  dailyHistory: Object
 });
 
 const store = useWatermeterStore();

@@ -67,10 +67,29 @@ log("[INIT] Loaded config:")
 # pretty print json
 log(json.dumps(config, indent=4))
 
-# Run migrations
-run_migrations(config['dbfile'])
+# Run migrations, seeding global_settings from config if first run
+run_migrations(config['dbfile'], initial_config=config)
 
-MQTT_CONFIG = config['mqtt']
+def load_mqtt_config_from_db():
+    """Read MQTT settings from global_settings table."""
+    conn = sqlite3.connect(config['dbfile'])
+    cursor = conn.cursor()
+    cursor.execute("SELECT mqtt_broker, mqtt_port, mqtt_username, mqtt_password, mqtt_topic, max_history, max_evals FROM global_settings WHERE id = 1")
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            'broker': row[0] or 'localhost',
+            'port': int(row[1] or 1883),
+            'username': row[2] or None,
+            'password': row[3] or None,
+            'topic': row[4] or 'MeterMonitor/#',
+        }, int(row[5] or 200), int(row[6] or 100)
+    return config['mqtt'], config.get('max_history', 200), config.get('max_evals', 100)
+
+MQTT_CONFIG, max_history, max_evals = load_mqtt_config_from_db()
+config['max_history'] = max_history
+config['max_evals'] = max_evals
 
 # Create an outbound-only MQTT client for publishing (used by polling/http capture paths).
 # The inbound MQTT handler creates its own client and also subscribes.
@@ -95,21 +114,55 @@ except Exception as e:
 polling_handler = PollingHandler(config, db_file=config['dbfile'], mqtt_client=_publisher_mqtt_client)
 polling_handler.start()
 
+# MQTT handler reference for restarts
+_active_mqtt_handler = None
+_mqtt_lock = threading.Lock()
+
+def start_mqtt_handler(mqtt_cfg):
+    global _active_mqtt_handler
+    with _mqtt_lock:
+        if _active_mqtt_handler is not None:
+            try:
+                _active_mqtt_handler.stop()
+            except Exception:
+                pass
+        handler = MQTTHandler(config, db_file=config['dbfile'], forever=False)
+        _active_mqtt_handler = handler
+        thread = threading.Thread(
+            target=lambda: handler.start(
+                broker=mqtt_cfg.get('broker', 'localhost'),
+                port=int(mqtt_cfg.get('port', 1883)),
+                topic=mqtt_cfg.get('topic', 'MeterMonitor/#'),
+                username=mqtt_cfg.get('username') or None,
+                password=mqtt_cfg.get('password') or None,
+            ),
+            daemon=True
+        )
+        thread.start()
+
+def restart_mqtt_from_db():
+    new_mqtt, new_max_history, new_max_evals = load_mqtt_config_from_db()
+    config['max_history'] = new_max_history
+    config['max_evals'] = new_max_evals
+    start_mqtt_handler(new_mqtt)
+    log("[INIT] MQTT handler restarted with new settings from DB")
+
 if config['http']['enabled']:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        def run_mqtt():
-            mqtt_handler = MQTTHandler(config, db_file=config['dbfile'], forever=True)
-            mqtt_handler.start(**MQTT_CONFIG)
-
-        thread = threading.Thread(target=run_mqtt, daemon=True)
-        thread.start()
+        start_mqtt_handler(MQTT_CONFIG)
         yield
 
-    app = prepare_setup_app(config, lifespan)
+    app = prepare_setup_app(config, lifespan, restart_mqtt_fn=restart_mqtt_from_db)
     log(f"[INIT] Started setup server on http://{config['http']['host']}:{config['http']['port']}")
     uvicorn.run(app, host=config['http']['host'], port=config['http']['port'], log_level="error")
 
 else:
     mqtt_handler = MQTTHandler(config, db_file=config['dbfile'], forever=True)
-    mqtt_handler.start(**MQTT_CONFIG)
+    mqtt_handler.start(
+        broker=MQTT_CONFIG.get('broker', 'localhost'),
+        port=int(MQTT_CONFIG.get('port', 1883)),
+        topic=MQTT_CONFIG.get('topic', 'MeterMonitor/#'),
+        username=MQTT_CONFIG.get('username') or None,
+        password=MQTT_CONFIG.get('password') or None,
+    )

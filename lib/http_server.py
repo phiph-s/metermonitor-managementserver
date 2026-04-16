@@ -44,7 +44,7 @@ from lib.realtime_events import evaluation_event_hub
 # http server class
 # FastAPOI automatically creates a documentation for the API on the path /docs
 
-def prepare_setup_app(config, lifespan):
+def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
     app = FastAPI(lifespan=lifespan)
     SECRET_KEY = config['secret_key']
     db_connection = lambda: sqlite3.connect(config['dbfile'])
@@ -198,6 +198,15 @@ def prepare_setup_app(config, lifespan):
 
     class ThresholdSearchRequest(BaseModel):
         steps: int = 10
+
+    class GlobalSettingsUpdate(BaseModel):
+        mqtt_broker: Optional[str] = None
+        mqtt_port: Optional[int] = None
+        mqtt_username: Optional[str] = None
+        mqtt_password: Optional[str] = None
+        mqtt_topic: Optional[str] = None
+        max_history: Optional[int] = None
+        max_evals: Optional[int] = None
 
     # --- Camera source models (HA entity polling) ---
     class CameraSourceBase(BaseModel):
@@ -1153,6 +1162,65 @@ def prepare_setup_app(config, lifespan):
         cursor.execute("SELECT value, timestamp, confidence, manual FROM history WHERE name = ?", (name,))
         return {"history": [row for row in cursor.fetchall()]}
 
+    @app.get("/api/watermeters/{name}/daily-history", dependencies=[Depends(authenticate)])
+    def get_watermeter_daily_history(name: str):
+        cursor = db_connection().cursor()
+        cursor.execute("SELECT value, date FROM daily_history WHERE name = ? ORDER BY date ASC", (name,))
+        return {"history": [row for row in cursor.fetchall()]}
+
+    @app.get("/api/watermeters/{name}/stats", dependencies=[Depends(authenticate)])
+    def get_watermeter_stats(name: str):
+        """Return today/daily-avg/yearly-avg consumption stats for the card view."""
+        cursor = db_connection().cursor()
+
+        # Latest meter reading from history
+        cursor.execute(
+            "SELECT value FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,)
+        )
+        row = cursor.fetchone()
+        current_value = row[0] if row else None
+
+        # Last daily_history entry (most recent completed day)
+        cursor.execute(
+            "SELECT value, date FROM daily_history WHERE name = ? ORDER BY date DESC LIMIT 1", (name,)
+        )
+        row = cursor.fetchone()
+        last_daily_value, last_daily_date = (row[0], row[1]) if row else (None, None)
+
+        # Today's consumption = current - last daily snapshot
+        today_consumption = None
+        if current_value is not None and last_daily_value is not None:
+            today_consumption = max(0, current_value - last_daily_value)
+
+        # Daily average and yearly average from daily_history deltas
+        cursor.execute(
+            "SELECT value, date FROM daily_history WHERE name = ? ORDER BY date ASC", (name,)
+        )
+        rows = cursor.fetchall()
+
+        daily_avg = None
+        yearly_avg = None
+        extrapolated = False
+
+        if len(rows) >= 2:
+            values = [r[0] for r in rows]
+            deltas = [max(0, values[i+1] - values[i]) for i in range(len(values)-1)]
+            daily_avg = sum(deltas) / len(deltas)
+
+            days_of_data = len(deltas)
+            yearly_avg = daily_avg * 365
+            if days_of_data < 365:
+                extrapolated = True
+
+        return {
+            "today_consumption": today_consumption,
+            "last_daily_date": last_daily_date,
+            "daily_avg": daily_avg,
+            "yearly_avg": yearly_avg,
+            "extrapolated": extrapolated,
+            "days_of_data": len(rows) - 1 if len(rows) >= 2 else 0,
+        }
+
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])
     def get_watermeter(name: str):
         cursor = db_connection().cursor()
@@ -1701,6 +1769,92 @@ def prepare_setup_app(config, lifespan):
 
             # Return the result
             return {"base64": base64r}
+
+    # --- Global settings endpoints ---
+
+    @app.get("/api/global-settings", dependencies=[Depends(authenticate)])
+    def get_global_settings():
+        cursor = db_connection().cursor()
+        cursor.execute("""
+            SELECT mqtt_broker, mqtt_port, mqtt_username, mqtt_password, mqtt_topic, max_history, max_evals
+            FROM global_settings WHERE id = 1
+        """)
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=500, detail="Global settings not found")
+        return {
+            "mqtt_broker": row[0],
+            "mqtt_port": row[1],
+            "mqtt_username": row[2],
+            "mqtt_password": row[3],
+            "mqtt_topic": row[4],
+            "max_history": row[5],
+            "max_evals": row[6],
+        }
+
+    @app.put("/api/global-settings", dependencies=[Depends(authenticate)])
+    def update_global_settings(payload: GlobalSettingsUpdate):
+        db = db_connection()
+        cursor = db.cursor()
+        cursor.execute("""
+            UPDATE global_settings SET
+                mqtt_broker = COALESCE(?, mqtt_broker),
+                mqtt_port = COALESCE(?, mqtt_port),
+                mqtt_username = ?,
+                mqtt_password = ?,
+                mqtt_topic = COALESCE(?, mqtt_topic),
+                max_history = COALESCE(?, max_history),
+                max_evals = COALESCE(?, max_evals)
+            WHERE id = 1
+        """, (
+            payload.mqtt_broker,
+            payload.mqtt_port,
+            payload.mqtt_username,
+            payload.mqtt_password,
+            payload.mqtt_topic,
+            payload.max_history,
+            payload.max_evals,
+        ))
+        db.commit()
+        # Update in-memory config so active requests reflect changes immediately
+        if payload.max_history is not None:
+            config['max_history'] = payload.max_history
+        if payload.max_evals is not None:
+            config['max_evals'] = payload.max_evals
+        log("[HTTP] Global settings updated")
+        return {"result": True}
+
+    @app.post("/api/global-settings/mqtt/restart", dependencies=[Depends(authenticate)])
+    def restart_mqtt():
+        if restart_mqtt_fn is None:
+            raise HTTPException(status_code=501, detail="MQTT restart not available in this mode")
+        try:
+            restart_mqtt_fn()
+            return {"result": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/global-settings/mqtt-supervisor")
+    def get_mqtt_supervisor_credentials():
+        """Fetch MQTT credentials from the HA Supervisor API (only works as HA addon)."""
+        sup_token = os.environ.get('SUPERVISOR_TOKEN')
+        if not sup_token:
+            raise HTTPException(status_code=503, detail="Supervisor token not available")
+        try:
+            req = urllib.request.Request(
+                "http://supervisor/services/mqtt",
+                headers={"Authorization": f"Bearer {sup_token}"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+            return {
+                "mqtt_broker": data.get("host"),
+                "mqtt_port": data.get("port"),
+                "mqtt_username": data.get("username"),
+                "mqtt_password": data.get("password"),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Failed to fetch supervisor MQTT credentials: {e}")
 
     @app.get("/")
     async def serve_index():

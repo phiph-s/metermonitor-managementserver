@@ -6,23 +6,24 @@
         <div class="app-header">
           <div class="header-bar">
             <div class="header-left">
-              <transition name="back-slide" mode="out-in">
-                <router-link v-if="showBack" to="/" key="back" class="back-btn-wrapper">
-                  <n-button quaternary round size="large" style="padding: 0; font-size: 16px;">
-                    ← Back
-                  </n-button>
-                </router-link>
-              </transition>
               <img
                 src="@/assets/logo.png"
                 alt="Logo"
                 class="theme-revert header-logo"
               />
+              <div class="nav-divider"></div>
+              <router-link to="/" class="nav-item" :class="{ active: isOverviewActive }">
+                <n-icon size="15"><HomeOutlined /></n-icon>Overview
+              </router-link>
+              <router-link to="/settings" class="nav-item" :class="{ active: route.path === '/settings' }">
+                <n-icon size="15"><SettingsOutlined /></n-icon>Settings
+              </router-link>
+              <router-link v-if="currentMeter" :to="(isSetup ? '/setup/' : '/meter/') + currentMeter" class="nav-item active nav-item--meter">
+                <n-icon size="15"><BuildOutlined v-if="isSetup" /><SpeedOutlined v-else /></n-icon>{{ currentMeter }}
+              </router-link>
             </div>
             <div class="header-right">
-            <n-tag size="small" :type="buildTagType" class="build-tag">
-              {{ buildTagLabel }}
-            </n-tag>
+            <span class="build-version" :style="{ color: buildVersionColor }">{{ buildTagLabel }}</span>
             <n-popover
               v-if="alertKeys.length > 0"
               trigger="click"
@@ -90,8 +91,8 @@
 </template>
 
 <script setup>
-import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NTag, NPopover} from 'naive-ui';
-import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined, RefreshOutlined } from '@vicons/material';
+import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NPopover} from 'naive-ui';
+import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined, RefreshOutlined, HomeOutlined, SettingsOutlined, SpeedOutlined, BuildOutlined } from '@vicons/material';
 import {onMounted, onUnmounted, ref, computed, reactive, provide} from "vue";
 import WhatsNewDialog from '@/components/WhatsNewDialog.vue';
 import { useRoute } from 'vue-router';
@@ -139,14 +140,16 @@ const cycleTheme = () => {
   themeStore.setThemeMode(modes[nextIndex]);
 };
 
-const showBack = computed(() => route.path !== '/');
+const isOverviewActive = computed(() => route.path === '/' || route.path === '/list');
+const currentMeter = computed(() => (route.name === 'Meter' || route.name === 'Setup') ? route.params.id : null);
+const isSetup = computed(() => route.name === 'Setup');
 
 const alerts = ref({});
 const alertKeys = computed(() => Object.keys(alerts.value));
 
 const getAlertType = (key, message) => {
   if (key === 'authentication') return 'warning';
-  if (key === 'mqtt' && message?.toLowerCase().includes('connecting')) return 'info';
+  if (key === 'mqtt' && message === 'Connecting to MQTT broker') return 'info';
   return 'error';
 };
 
@@ -180,9 +183,9 @@ const buildTagLabel = computed(() => {
   return `v${__APP_VERSION__ || '0.0.0'}`;
 });
 
-const buildTagType = computed(() => {
+const buildVersionColor = computed(() => {
   const devBranch = (__GIT_BRANCH__ || '').toLowerCase().includes('dev');
-  return (import.meta.env.DEV || devBranch) ? 'warning' : 'success';
+  return (import.meta.env.DEV || devBranch) ? '#f0a020' : '#18a058';
 });
 
 const toWebsocketUrl = (baseHost) => {
@@ -281,11 +284,6 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
-.back-btn-wrapper {
-  display: inline-flex;
-  text-decoration: none;
-}
-
 .header-bar {
   flex: 1;
   display: flex;
@@ -304,26 +302,82 @@ onUnmounted(() => {
 
 .header-left {
   display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.nav-divider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 6px 10px;
+  flex-shrink: 0;
+}
+
+.light-mode .nav-divider {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.nav-item {
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 5px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.7;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  opacity: 1;
+}
+
+.light-mode .nav-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.nav-item.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  opacity: 1;
+}
+
+.light-mode .nav-item.active {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.nav-item--meter {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .header-logo {
   max-width: 100px;
+  align-self: center;
 }
 
 .n-dialog{
   border-radius: 12px;
 }
 
-.build-tag {
-  margin-right: 4px;
+.build-version {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: monospace;
+  opacity: 0.85;
 }
 
 .alert-dropdown {
@@ -371,17 +425,4 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 
-.back-slide-enter-active,
-.back-slide-leave-active {
-  transition: all 0.25s ease;
-  overflow: hidden;
-  max-width: 120px;
-}
-
-.back-slide-enter-from,
-.back-slide-leave-to {
-  opacity: 0;
-  max-width: 0;
-  transform: translateX(-8px);
-}
 </style>

@@ -265,7 +265,7 @@ watch(loading, (next) => {
 
 .add-card {
   width: 300px;
-  height: 248px;
+  height: 286px;
   min-height: 180px;
   border: 2px dashed rgba(255, 255, 255, 0.2);
   border-radius: 14px;

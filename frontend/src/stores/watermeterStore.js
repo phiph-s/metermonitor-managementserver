@@ -8,6 +8,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
   const evaluations = ref([]);
   const evaluation = ref({});
   const history = ref(null);
+  const dailyHistory = ref(null);
   const source = ref(null);
   const capturing = ref(false);
   const defaultSettings = {
@@ -63,6 +64,12 @@ export const useWatermeterStore = defineStore('watermeter', () => {
   const fetchHistory = async (meterId) => {
     const data = await apiService.getJson(`api/watermeters/${meterId}/history`);
     history.value = data;
+    return data;
+  };
+
+  const fetchDailyHistory = async (meterId) => {
+    const data = await apiService.getJson(`api/watermeters/${meterId}/daily-history`);
+    dailyHistory.value = data;
     return data;
   };
 
@@ -133,6 +140,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     evaluations.value = null;
     evaluation.value = null;
     history.value = null;
+    dailyHistory.value = null;
     source.value = null;
     Object.assign(settings, defaultSettings);
   };
@@ -142,6 +150,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       fetchWatermeter(meterId),
       fetchEvaluations(meterId),
       fetchHistory(meterId),
+      fetchDailyHistory(meterId),
       fetchSettings(meterId),
       fetchSource(meterId),
     ]);
@@ -153,6 +162,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     evaluations,
     evaluation,
     history,
+    dailyHistory,
     source,
     settings,
     capturing,
@@ -160,6 +170,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     fetchWatermeter,
     fetchEvaluations,
     fetchHistory,
+    fetchDailyHistory,
     fetchSettings,
     updateSettings,
     fetchSource,

@@ -49,34 +49,34 @@
 <!--      </div>-->
 
       <div class="result-row" v-if="last_result && last_digits">
-        <span
-          class="prediction google-sans-code"
-          v-for="[i, digit] in (last_result + '').padStart(last_digits.length, '0').split('').entries()"
-          :key="i + 'd'"
-          :class="{ faded: isDecimalDigitIndex(i, last_digits.length) }"
-        >
-          <template v-if="isDecimalSeparatorIndex(i, last_digits.length)">
-            {{ digit }},
-          </template>
-          <template v-else>
-            {{ digit }}
-          </template>
-        </span>
-        <span class="unit">{{ meterUnit }}</span>
+        <div class="stat-chip" style="width:100%;">
+          <div class="stat-label">Current reading</div>
+          <div class="stat-value big">{{ last_result.toString().slice(0, meterDecimals - 1) }}.{{ last_result.toString().slice(meterDecimals - 1) }} {{ meterUnit }}</div>
+        </div>
       </div>
 
-      <div v-if="historyData.length > 1" class="sparkline-container">
-        <div class="sparkline-labels">
-          <span>{{ firstValue }}</span>
-          <span>{{ lastValue }}</span>
+      <div v-if="!setup && stats" class="stats-row">
+        <div class="stat-chip">
+          <div class="stat-label">Today</div>
+          <div class="stat-value">{{ formatConsumption(stats.today_consumption) }}</div>
         </div>
-        <apexchart
-          type="area"
-          height="42"
-          width="100%"
-          :options="chartOptions"
-          :series="chartSeries"
-        />
+        <div class="stat-chip">
+          <div class="stat-label">Daily avg</div>
+          <div class="stat-value">{{ formatConsumption(stats.daily_avg) }}</div>
+        </div>
+        <n-tooltip v-if="stats.extrapolated" trigger="hover" placement="bottom">
+          <template #trigger>
+            <div class="stat-chip stat-chip--extrapolated">
+              <div class="stat-label">Yearly <span class="extrap-mark">~</span></div>
+              <div class="stat-value">{{ formatConsumption(stats.yearly_avg) }}</div>
+            </div>
+          </template>
+          Extrapolated from {{ stats.days_of_data }} day{{ stats.days_of_data === 1 ? '' : 's' }} of data
+        </n-tooltip>
+        <div v-else class="stat-chip">
+          <div class="stat-label">Yearly</div>
+          <div class="stat-value">{{ formatConsumption(stats.yearly_avg) }}</div>
+        </div>
       </div>
 
       <template #action>
@@ -113,7 +113,7 @@ import SourceCollapse from "@/components/SourceCollapse.vue";
 import { apiService } from '@/services/api';
 
 const themeStore = useThemeStore();
-const { isDark } = storeToRefs(themeStore);
+const { } = storeToRefs(themeStore);
 
 const props = defineProps([
     'meter_name',
@@ -142,7 +142,7 @@ const sourceIcon = computed(() => {
   return HelpOutlineOutlined;
 });
 
-const historyData = ref([]);
+const stats = ref(null);
 const source = ref(null);
 const host = import.meta.env.VITE_HOST;
 const dialog = useDialog();
@@ -181,21 +181,12 @@ const removeMeter = async () => {
   }
 };
 
-const loadHistory = async () => {
+const loadStats = async () => {
   if (props.setup) return;
   try {
-    const response = await fetch(host + `api/watermeters/${props.meter_name}/history`, {
-      headers: { 'secret': localStorage.getItem('secret') }
-    });
-    if (response.ok) {
-      const data = await response.json();
-      // Sort by timestamp and take last 20 entries
-      historyData.value = (data.history || [])
-        .sort((a, b) => new Date(a[1]) - new Date(b[1]))
-        .slice(-20);
-    }
+    stats.value = await apiService.getJson(`api/watermeters/${props.meter_name}/stats`);
   } catch (e) {
-    console.error('Failed to load history for card:', e);
+    console.error('Failed to load stats for card:', e);
   }
 };
 
@@ -214,7 +205,7 @@ const loadSource = async () => {
 };
 
 onMounted(() => {
-  loadHistory();
+  loadStats();
   loadSource();
 });
 
@@ -274,67 +265,10 @@ const isDecimalDigitIndex = (idx, digitLength) => {
   return idx >= digitLength - decimals;
 };
 
-const firstValue = computed(() => {
-  if (historyData.value.length === 0) return '';
-  return (historyData.value[0][0] / meterScale.value).toFixed(Math.min(meterDecimals.value, 4));
-});
-
-const lastValue = computed(() => {
-  if (historyData.value.length === 0) return '';
-  return (historyData.value[historyData.value.length - 1][0] / meterScale.value).toFixed(Math.min(meterDecimals.value, 4));
-});
-
-const chartSeries = computed(() => [{
-  name: 'Value',
-  data: historyData.value.map(item => ({
-    x: new Date(item[1]).getTime(),
-    y: item[0] / meterScale.value
-  }))
-}]);
-
-const chartOptions = computed(() => ({
-  chart: {
-    type: 'area',
-    sparkline: { enabled: true },
-    animations: { enabled: false },
-    background: 'transparent',
-  },
-  stroke: {
-    curve: 'smooth',
-    width: 2,
-  },
-  fill: {
-    type: 'gradient',
-    gradient: {
-      shadeIntensity: 1,
-      opacityFrom: 0.4,
-      opacityTo: 0.1,
-    }
-  },
-  colors: [isDark.value ? '#18bcf2' : '#0891b2'],
-  tooltip: {
-    enabled: true,
-    theme: isDark.value ? 'dark' : 'light',
-    x: {
-      format: 'dd MMM HH:mm'
-    },
-    y: {
-      formatter: (val) => val.toFixed(Math.min(meterDecimals.value + 1, 4)) + ' ' + meterUnit.value
-    }
-  },
-  xaxis: {
-    type: 'datetime',
-  },
-  yaxis: {
-    show: false,
-    min: 0,
-    max: 100,
-  },
-  grid: {
-    show: false,
-    padding: { left: 0, right: 0, top: 0, bottom: 0 }
-  },
-}));
+const formatConsumption = (rawValue) => {
+  if (rawValue == null) return '—';
+  return (rawValue / meterScale.value).toFixed(Math.min(meterDecimals.value, 3)) + ' ' + meterUnit.value;
+};
 </script>
 
 <style scoped>
@@ -446,22 +380,53 @@ const chartOptions = computed(() => ({
   opacity: 0.6;
 }
 
-.sparkline-container {
-  margin: 8px -16px 0 -16px;
-  position: relative;
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 10px;
 }
 
-.sparkline-labels {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 8px;
+.stat-chip {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.light-mode .stat-chip {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.stat-chip--extrapolated {
+  outline: 1px dashed rgba(255, 126, 0, 0.8);
+}
+
+.stat-label {
   font-size: 10px;
-  opacity: 0.5;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.55;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.extrap-mark {
+  color: rgb(232, 108, 0);
+  font-size: 12px;
+}
+
+.stat-value {
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value.big{
+  font-size: 16px;
 }
 
 .card-footer {

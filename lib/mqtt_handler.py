@@ -1,5 +1,6 @@
 from lib.log import log
 import datetime
+import threading
 import time
 import base64
 
@@ -25,21 +26,26 @@ class MQTTHandler:
         self.forever = forever
         self.should_reconnect = True
         self.topic = None
+        self._reconnect_in_progress = False
+        # Used to signal _reconnect() loop when _on_connect fires
+        self._connect_result = threading.Event()
+        self._connect_success = False
         # Use singleton instance (shared with HTTP server)
         self.meter_preditor = get_meter_predictor()
         log("[MQTT] Using shared meter predictor singleton instance.")
 
-    # On connect, remove the alert for the frontend
-    # Also publish registration messages for all known watermeters
-
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
             log("[MQTT] Successfully connected to MQTT broker")
+            self._connect_success = True
+            self._connect_result.set()
             remove_alert("mqtt")
         else:
-            log(f"[MQTT] Connection failed with code {reason_code}")
-            add_alert("mqtt", "Failed to connect to MQTT broker")
-            self._reconnect()
+            code_str = str(reason_code)
+            log(f"[MQTT] Connection rejected: {reason_code}")
+            add_alert("mqtt", f"MQTT connection rejected: {code_str}")
+            self._connect_success = False
+            self._connect_result.set()
             return
 
         # Re-subscribe on every connect (handles reconnect after disconnect)
@@ -55,33 +61,48 @@ class MQTTHandler:
             for row in rows:
                 publish_registration(self.client, self.config, row[0], "value")
 
-
-    # On disconnect, add an alert for the frontend and try to reconnect
     def _on_disconnect(self, client, userdata, rc, properties=None, packet=None, reason=None):
         log(f"Disconnected with code {rc}")
-        add_alert("mqtt", "Disconnected from MQTT broker")
-        if self.should_reconnect:
-            self._reconnect()
+        if not self.should_reconnect:
+            return
+        add_alert("mqtt", "MQTT connection lost")
+        # Guard against double reconnect loop (on_connect failure also triggers disconnect)
+        if not self._reconnect_in_progress:
+            self._reconnect_in_progress = True
+            t = threading.Thread(target=self._reconnect, daemon=True)
+            t.start()
 
-    # Reconnect with exponential backoff
     def _reconnect(self):
-        """Attempts to reconnect with exponential backoff"""
-        delay = 1  # Initial delay in seconds
-        max_delay = 60  # Maximum delay to avoid too frequent reconnections
-
-        add_alert("mqtt", "Reconnecting to MQTT broker")
+        """Reconnect loop with exponential backoff.
+        Waits for _on_connect to confirm auth success before exiting.
+        Only removes the alert when the connection is truly established."""
+        delay = 1
+        max_delay = 60
 
         while self.should_reconnect:
             try:
-                log(f"[MQTT] Reconnecting to MQTT broker...")
+                log("[MQTT] Reconnecting to MQTT broker...")
+                self._connect_result.clear()
+                self._connect_success = False
                 self.client.reconnect()
-                log("Reconnected successfully")
-                remove_alert("mqtt")
-                return  # Exit loop on success
-            except Exception as e:
-                log(f"[MQTT] Reconnect failed: {e}, retrying in {delay} seconds...")
+                # Wait for _on_connect – TCP success alone is not enough
+                got_result = self._connect_result.wait(timeout=15)
+                if self._connect_success:
+                    self._reconnect_in_progress = False
+                    return
+                # Auth rejected or no CONNACK within timeout
+                reason = "connection rejected" if got_result else "broker unreachable or not responding"
+                add_alert("mqtt", f"MQTT error: {reason} – retrying in {delay}s")
+                log(f"[MQTT] {reason}, retrying in {delay}s...")
                 time.sleep(delay)
-                delay = min(delay * 2, max_delay)  # Exponential backoff
+                delay = min(delay * 2, max_delay)
+            except Exception as e:
+                add_alert("mqtt", f"MQTT error: {e}")
+                log(f"[MQTT] Reconnect failed: {e}, retrying in {delay}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, max_delay)
+
+        self._reconnect_in_progress = False
 
     # Validate the incoming message
     def _on_message(self, client, userdata, msg):
@@ -341,5 +362,10 @@ class MQTTHandler:
             self.client.loop_start()
 
     def stop(self):
+        self.should_reconnect = False
+        self._connect_result.set()  # unblock any waiting _reconnect() thread immediately
         self.client.loop_stop()
-        self.client.disconnect()
+        try:
+            self.client.disconnect()
+        except Exception:
+            pass

@@ -15,6 +15,7 @@
           :settings="settings"
           :id="id"
           :history="history"
+          :daily-history="dailyHistory"
           :downloadingDataset="downloadingDataset"
           @resetToSetup="resetToSetup"
           @triggerCapture="triggerCapture"
@@ -58,6 +59,7 @@
             :id="id"
             :downloadingDataset="downloadingDataset"
             :history="history"
+          :daily-history="dailyHistory"
             @resetToSetup="resetToSetup"
             @triggerCapture="triggerCapture"
             @deleteMeter="deleteMeter"
@@ -98,7 +100,7 @@ import { useHeaderControls } from '@/composables/headerControls';
 const route = useRoute();
 const id = computed(() => route.params.id);
 const store = useWatermeterStore();
-const { lastPicture: data, evaluations, history, settings } = storeToRefs(store);
+const { lastPicture: data, evaluations, history, dailyHistory, settings } = storeToRefs(store);
 
 const loading = ref(false);
 const refreshing = ref(false);
