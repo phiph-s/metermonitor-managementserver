@@ -1,112 +1,167 @@
-/**
- * E2E test server for Playwright.
- * Starts three services required by the test suite:
- *   1. Aedes MQTT broker     → mqtt://127.0.0.1:1889
- *   2. Mock HA HTTP server   → http://127.0.0.1:1888
- *      - GET /test-image.png             (image for HTTP sources)
- *      - GET /api/states                 (camera entity list)
- *      - GET /api/camera_proxy/<id>      (camera snapshot)
- *   3. Python backend        → http://127.0.0.1:8070  (settings.e2e.json)
- */
-
-import { createServer as createTcpServer } from 'net';
-import { createServer as createHttpServer } from 'http';
-import { readFileSync, existsSync, rmSync } from 'fs';
-import { spawn } from 'child_process';
+import http from 'http';
+import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Aedes from 'aedes';
+import { existsSync, readFileSync, rmSync, mkdirSync } from 'fs';
+import { spawn } from 'child_process';
+import aedes from 'aedes';
+import { WebSocketServer } from 'ws';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '..', '..');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..', '..');
 
-// ── Test image ────────────────────────────────────────────────────────────────
-const imagePath = path.join(repoRoot, 'test', 'img', 'img.png');
-const imageBytes = readFileSync(imagePath);
+const MQTT_PORT = Number.parseInt(process.env.E2E_MQTT_PORT || '1889', 10);
+const HA_PORT = Number.parseInt(process.env.E2E_HA_PORT || '1888', 10);
+const BACKEND_PORT = Number.parseInt(process.env.E2E_BACKEND_PORT || '8070', 10);
 
-// ── 1. MQTT broker (aedes) ────────────────────────────────────────────────────
-const aedes = new Aedes();
-const mqttServer = createTcpServer(aedes.handle);
-mqttServer.listen(1889, '127.0.0.1', () => {
-  console.log('[e2e] MQTT broker   → mqtt://127.0.0.1:1889');
-});
+const settingsPath = path.join(rootDir, 'settings.e2e.json');
+const dbPath = path.join(rootDir, 'data', 'e2e-watermeters.sqlite');
+const datasetDir = path.join(rootDir, 'data', 'output_dataset_e2e');
+const imagePath = path.join(rootDir, 'test', 'img', 'img.png');
 
-// ── 2. Mock HA HTTP server ────────────────────────────────────────────────────
-const haServer = createHttpServer((req, res) => {
-  // HTTP source image
-  if (req.url === '/test-image.png') {
-    res.writeHead(200, { 'Content-Type': 'image/png' });
-    res.end(imageBytes);
-    return;
-  }
-
-  // HA states — returns one camera entity so the dropdown shows "Test Camera"
-  if (req.url === '/api/states') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify([
-      {
-        entity_id: 'camera.test_camera',
-        state: 'idle',
-        attributes: { friendly_name: 'Test Camera' },
-      },
-    ]));
-    return;
-  }
-
-  // HA camera snapshot
-  if (req.url.startsWith('/api/camera_proxy/')) {
-    res.writeHead(200, { 'Content-Type': 'image/png' });
-    res.end(imageBytes);
-    return;
-  }
-
-  // HA entity registry (used by flash-entity suggestion — just return empty)
-  if (req.url.startsWith('/api/')) {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify([]));
-    return;
-  }
-
-  res.writeHead(404);
-  res.end('Not found');
-});
-
-haServer.listen(1888, '127.0.0.1', () => {
-  console.log('[e2e] Mock HA server → http://127.0.0.1:1888');
-});
-
-// ── 3. Python backend ─────────────────────────────────────────────────────────
-const settingsPath = path.join(repoRoot, 'settings.e2e.json');
-
-// Remove stale e2e database so each run starts clean
-const dbPath = path.join(repoRoot, 'data', 'e2e-watermeters.sqlite');
 if (existsSync(dbPath)) {
   rmSync(dbPath);
-  console.log('[e2e] Removed stale e2e database');
 }
+if (existsSync(datasetDir)) {
+  rmSync(datasetDir, { recursive: true, force: true });
+}
+mkdirSync(datasetDir, { recursive: true });
 
-const python = spawn('python3', ['run.py'], {
-  cwd: repoRoot,
+const imageBuffer = readFileSync(imagePath);
+
+const mqttBroker = aedes();
+const mqttServer = net.createServer(mqttBroker.handle);
+mqttServer.listen(MQTT_PORT, '127.0.0.1', () => {
+  console.log(`[E2E] MQTT broker listening on 127.0.0.1:${MQTT_PORT}`);
+});
+
+const haStates = [
+  {
+    entity_id: 'camera.test_meter',
+    state: 'on',
+    attributes: {
+      friendly_name: 'Test Camera',
+    },
+  },
+  {
+    entity_id: 'light.test_flash',
+    state: 'off',
+    attributes: {
+      friendly_name: 'Test Flash',
+    },
+  },
+];
+
+const haServer = http.createServer((req, res) => {
+  const { url, method } = req;
+
+  if (url === '/api/states') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(haStates));
+    return;
+  }
+
+  if (url === '/api/config') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ location_name: 'Test HA' }));
+    return;
+  }
+
+  if (url && url.startsWith('/api/camera_proxy/')) {
+    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+    res.end(imageBuffer);
+    return;
+  }
+
+  if (url && url.startsWith('/api/services/light/')) {
+    if (method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ result: 'ok' }));
+    return;
+  }
+
+  if (url === '/test-image.png' || url === '/test-image.jpg') {
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    res.end(imageBuffer);
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+const wss = new WebSocketServer({ noServer: true });
+haServer.on('upgrade', (req, socket, head) => {
+  if (req.url === '/api/websocket') {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+wss.on('connection', (ws) => {
+  ws.send(JSON.stringify({ type: 'auth_required', ha_version: '2024.1.0' }));
+
+  ws.on('message', (data) => {
+    let msg;
+    try {
+      msg = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+
+    if (msg.type === 'auth') {
+      ws.send(JSON.stringify({ type: 'auth_ok' }));
+      return;
+    }
+
+    if (msg.type === 'config/entity_registry/list') {
+      ws.send(
+        JSON.stringify({
+          id: msg.id || 1,
+          type: 'result',
+          success: true,
+          result: [],
+        })
+      );
+    }
+  });
+});
+
+haServer.listen(HA_PORT, '127.0.0.1', () => {
+  console.log(`[E2E] Fake HA/HTTP server listening on 127.0.0.1:${HA_PORT}`);
+});
+
+const backend = spawn('python3', ['run.py'], {
+  cwd: rootDir,
+  env: {
+    ...process.env,
+    METERMONITOR_SETTINGS: settingsPath,
+    PYTHONUNBUFFERED: '1',
+  },
   stdio: 'inherit',
-  env: { ...process.env, METERMONITOR_SETTINGS: settingsPath },
 });
 
-python.on('error', (err) => {
-  console.error('[e2e] Failed to start Python backend:', err.message);
-  process.exit(1);
-});
+console.log(`[E2E] Backend started on 127.0.0.1:${BACKEND_PORT}`);
 
-python.on('exit', (code) => {
-  console.log(`[e2e] Python backend exited (code ${code})`);
-  process.exit(code ?? 1);
-});
-
-// ── Cleanup ───────────────────────────────────────────────────────────────────
 const shutdown = () => {
-  python.kill('SIGTERM');
+  console.log('[E2E] Shutting down...');
   mqttServer.close();
+  mqttBroker.close();
   haServer.close();
+  wss.close();
+  if (backend && !backend.killed) {
+    backend.kill('SIGTERM');
+  }
 };
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+process.on('exit', shutdown);

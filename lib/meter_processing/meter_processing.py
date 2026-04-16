@@ -1,3 +1,4 @@
+from lib.log import log
 import base64
 import gc
 import os
@@ -21,7 +22,7 @@ class MeterPredictor:
         Initializes the ONNX inference sessions for YOLO and digit classifier.
         Optimized for minimal memory usage - uses ~70% less RAM than TensorFlow+PyTorch.
         """
-        print("[MeterPredictor] Loading ONNX models...")
+        log("[MeterPredictor] Loading ONNX models...")
 
         # Configure ONNX Runtime for minimal memory usage
         sess_options = ort.SessionOptions()
@@ -63,9 +64,9 @@ class MeterPredictor:
 
         # Force garbage collection after loading models
         gc.collect()
-        print("[MeterPredictor] ONNX models loaded successfully with minimal memory footprint.")
-        print(f"[MeterPredictor] YOLO input: {self.yolo_input_name}")
-        print(f"[MeterPredictor] Digit classifier input: {self.digit_input_name}")
+        log("[MeterPredictor] ONNX models loaded successfully with minimal memory footprint.")
+        log(f"[MeterPredictor] YOLO input: {self.yolo_input_name}")
+        log(f"[MeterPredictor] Digit classifier input: {self.digit_input_name}")
 
     def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None, segment_mode="display"):
         """

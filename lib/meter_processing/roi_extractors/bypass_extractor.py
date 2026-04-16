@@ -1,3 +1,4 @@
+from lib.log import log
 import base64
 from io import BytesIO
 
@@ -13,7 +14,7 @@ class BypassExtractor(ROIExtractor):
         self.rotated_180 = rotated_180
 
     def extract(self, input_image):
-        print("[ROIExtractor (Bypass)] Bypassing region-of-interest detection...")
+        log("[ROIExtractor (Bypass)] Bypassing region-of-interest detection...")
         self.last_error = None
         img_np = np.array(input_image)
 

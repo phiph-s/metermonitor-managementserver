@@ -1,3 +1,4 @@
+from lib.log import log, configure as configure_log
 import os
 import sqlite3
 import threading
@@ -25,7 +26,7 @@ config = {}
 
 override_path = os.environ.get("METERMONITOR_SETTINGS")
 if override_path:
-    print(f"[INIT] Using config override from METERMONITOR_SETTINGS: {override_path}")
+    log(f"[INIT] Using config override from METERMONITOR_SETTINGS: {override_path}")
     if not os.path.exists(override_path):
         raise FileNotFoundError(f"Config override not found: {override_path}")
     with open(override_path, 'r') as f:
@@ -33,12 +34,12 @@ if override_path:
 else:
     path = '/data/options.json'
     if not os.path.exists(path):
-        print("[INIT] Running standalone, using settings.json")
+        log("[INIT] Running standalone, using settings.json")
         path = 'settings.json'
         with open(path, 'r') as f:
             config = json.load(f)
     else:
-        print("[INIT] Running as Home Assistant addon, using options.json and merging with ha_default_settings.json")
+        log("[INIT] Running as Home Assistant addon, using options.json and merging with ha_default_settings.json")
         #load options.json
         with open(path, 'r') as f:
             config = json.load(f)
@@ -61,9 +62,10 @@ else:
 
         config = deep_merge(config, defaults)
 
-print("[INIT] Loaded config:")
+configure_log(config.get('log_template', '%t %m'))
+log("[INIT] Loaded config:")
 # pretty print json
-print(json.dumps(config, indent=4))
+log(json.dumps(config, indent=4))
 
 # Run migrations
 run_migrations(config['dbfile'])
@@ -81,9 +83,9 @@ try:
         _publisher_mqtt_client.username_pw_set(MQTT_CONFIG.get('username'), MQTT_CONFIG.get('password'))
     _publisher_mqtt_client.connect(MQTT_CONFIG.get('broker', 'localhost'), int(MQTT_CONFIG.get('port', 1883)))
     _publisher_mqtt_client.loop_start()
-    print("[INIT] MQTT publisher client connected (for polling/http sources)")
+    log("[INIT] MQTT publisher client connected (for polling/http sources)")
 except Exception as e:
-    print(f"[INIT] MQTT publisher client not available: {e}")
+    log(f"[INIT] MQTT publisher client not available: {e}")
     _publisher_mqtt_client = None
 
 # start application. if http is enabled, start the http server
@@ -105,7 +107,7 @@ if config['http']['enabled']:
         yield
 
     app = prepare_setup_app(config, lifespan)
-    print(f"[INIT] Started setup server on http://{config['http']['host']}:{config['http']['port']}")
+    log(f"[INIT] Started setup server on http://{config['http']['host']}:{config['http']['port']}")
     uvicorn.run(app, host=config['http']['host'], port=config['http']['port'], log_level="error")
 
 else:

@@ -1,3 +1,4 @@
+from lib.log import log
 import datetime
 import base64
 import json
@@ -148,16 +149,16 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
     width, height = img.size
     timestamp = datetime.datetime.now().isoformat()
 
-    with sqlite3.connect(db_file) as conn:
+    # --- 1. Save image to DB, then release the connection before AI processing ---
+    meter_is_new = False
+    with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
-        # Update or insert into watermeters
         cursor.execute("SELECT 1 FROM watermeters WHERE name = ?", (name,))
         exists = cursor.fetchone()
-        meter_is_new = False
         if exists:
             cursor.execute('''
-                UPDATE watermeters 
-                SET 
+                UPDATE watermeters
+                SET
                     picture_number = picture_number + 1,
                     wifi_rssi = NULL,
                     picture_format = ?,
@@ -193,7 +194,6 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                 b64,
                 0
             ))
-            # Also insert default settings
             cursor.execute('''
                 INSERT OR IGNORE INTO settings
                 (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
@@ -201,70 +201,47 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                  max_flow_rate, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
-                name,
-                0,
-                125,
-                0,
-                125,
-                20,
-                7,
-                False,
-                False,
-                False,
-                1.0,
-                None,
-                "yolo",
-                None,
-                "display",
-                None,
-                3,
-                True
+                name, 0, 125, 0, 125, 20, 7, False, False, False,
+                1.0, None, "yolo", None, "display", None, 3, True
             ))
             meter_is_new = True
-
         conn.commit()
-        print(f"[CAPTURE] Saved image for {name}")
+    # Connection closed here — DB is free during AI processing below
+    log(f"[CAPTURE] Saved image for {name}")
 
-        # If the meter is new and we have an MQTT client, publish HA discovery registration.
-        if meter_is_new and mqtt_client is not None:
-            try:
-                from lib.functions import publish_registration
-                publish_registration(mqtt_client, config, name, "value")
-                print(f"[CAPTURE] Published MQTT registration for new meter {name}")
-            except Exception as e:
-                print(f"[CAPTURE] Failed to publish MQTT registration for {name}: {e}")
-
-        # Process the image
+    if meter_is_new and mqtt_client is not None:
         try:
-            result = reevaluate_latest_picture(db_file, name, meter_predictor,
-                                               config, publish=publish, mqtt_client=mqtt_client, notify_realtime=publish)
-            if result and len(result) >= 3:
-                boundingboxed_image = result[2]
-            else:
-                boundingboxed_image = None
-                if result is None:
-                    print(f"[CAPTURE] No bounding box generated for {name} (reevaluate returned None - meter likely not set up yet)")
-                else:
-                    print(f"[CAPTURE] No bounding box in result for {name}")
+            from lib.functions import publish_registration
+            publish_registration(mqtt_client, config, name, "value")
+            log(f"[CAPTURE] Published MQTT registration for new meter {name}")
         except Exception as e:
-            print(f"[CAPTURE] Error processing image for {name}: {e}")
-            import traceback
-            traceback.print_exc()
-            boundingboxed_image = None
+            log(f"[CAPTURE] Failed to publish MQTT registration for {name}: {e}")
 
-        if boundingboxed_image:
-            cursor.execute('''
-                UPDATE watermeters
-                SET picture_data_bbox = ?
-                WHERE name = ?
-            ''', (
-                boundingboxed_image,
-                name
-            ))
-            conn.commit()
-            print(f"[CAPTURE] Saved boundingboxed image for {name}")
-        else:
-            print(f"[CAPTURE] Skipping bounding box save for {name} (no bbox available)")
+    # --- 2. AI processing (no DB connection held) ---
+    try:
+        result = reevaluate_latest_picture(db_file, name, meter_predictor,
+                                           config, publish=publish, mqtt_client=mqtt_client, notify_realtime=publish)
+        boundingboxed_image = result[2] if result and len(result) >= 3 else None
+        if result is None:
+            log(f"[CAPTURE] No bounding box generated for {name} (reevaluate returned None - meter likely not set up yet)")
+        elif not boundingboxed_image:
+            log(f"[CAPTURE] No bounding box in result for {name}")
+    except Exception as e:
+        log(f"[CAPTURE] Error processing image for {name}: {e}")
+        import traceback
+        traceback.print_exc()
+        boundingboxed_image = None
+
+    # --- 3. Save bbox result ---
+    if boundingboxed_image:
+        with sqlite3.connect(db_file, timeout=30) as conn:
+            conn.execute(
+                "UPDATE watermeters SET picture_data_bbox = ? WHERE name = ?",
+                (boundingboxed_image, name)
+            )
+        log(f"[CAPTURE] Saved boundingboxed image for {name}")
+    else:
+        log(f"[CAPTURE] Skipping bounding box save for {name} (no bbox available)")
 
     return timestamp
 
@@ -288,17 +265,17 @@ def capture_and_process_source(config, db_file, source_row, meter_predictor, mqt
         timestamp = process_captured_image(db_file, source_row['name'], raw_image, format_, config, meter_predictor, publish=True, mqtt_client=mqtt_client)
 
         # Update source last_success_ts
-        with sqlite3.connect(db_file) as conn:
+        with sqlite3.connect(db_file, timeout=30) as conn:
             cursor = conn.cursor()
             cursor.execute("UPDATE sources SET last_success_ts = ?, last_error = NULL WHERE id = ?", (timestamp, source_row['id']))
             conn.commit()
-        print(f"[CAPTURE] Successfully captured and processed source {source_row['name']}")
+        log(f"[CAPTURE] Successfully captured and processed source {source_row['name']}")
         return timestamp
     except Exception as e:
         error_msg = str(e)
-        print(f"[CAPTURE] Failed to capture source {source_row['name']}: {error_msg}")
+        log(f"[CAPTURE] Failed to capture source {source_row['name']}: {error_msg}")
         # Update source with error, and only set last_success_ts when it is missing
-        with sqlite3.connect(db_file) as conn:
+        with sqlite3.connect(db_file, timeout=30) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT last_success_ts FROM sources WHERE id = ?", (source_row['id'],))
             row = cursor.fetchone()

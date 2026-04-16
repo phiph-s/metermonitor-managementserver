@@ -1,3 +1,4 @@
+from lib.log import log
 
 import asyncio
 import json
@@ -72,7 +73,7 @@ def suggest_flash_entity(
             _fetch_entity_registry(ha_base_url, ha_token)
         )
     except Exception as e:
-        print(f"[FLASH-SUGGEST] WS error: {e}")
+        log(f"[FLASH-SUGGEST] WS error: {e}")
         return None
 
     cam_entry = next(

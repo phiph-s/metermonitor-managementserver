@@ -1,3 +1,4 @@
+from lib.log import log
 import base64
 import cv2
 import numpy as np
@@ -195,7 +196,7 @@ class ORBExtractor(ROIExtractorTemplated):
                                      self.target_width_ext, self.target_height_ext)
         boundingboxed = self._draw_bbox(input_image, transformed_corners)
 
-        print("[ROIExtractor (ORB)]" + f"Success: {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
+        log("[ROIExtractor (ORB)]" + f"Success: {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
         return cropped, cropped_ext, boundingboxed
 
     def extract_segments(self, input_image, segments, extended_last_digit=False, shrink_last_3=False, segment_mode="display"):
@@ -243,7 +244,7 @@ class ORBExtractor(ROIExtractorTemplated):
             digits.append(warped)
 
         boundingboxed = self._draw_digit_quads(input_image, transformed_quads)
-        print("[ROIExtractor (ORB)]" + f"Success (each_digit): {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
+        log("[ROIExtractor (ORB)]" + f"Success (each_digit): {num_inliers} inliers, ratio: {inlier_ratio:.2f}")
         return digits, boundingboxed
 
     def _compute_homography(self, input_image):
@@ -263,7 +264,7 @@ class ORBExtractor(ROIExtractorTemplated):
 
         if desc_new is None or len(kp_new) < 10:
             self.last_error = "Too few features in input image"
-            print("[ROIExtractor (ORB)]" + self.last_error)
+            log("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
         # 2. Feature matching with Lowe's ratio test
@@ -278,7 +279,7 @@ class ORBExtractor(ROIExtractorTemplated):
 
         if len(good_matches) < self.min_inliers:
             self.last_error = f"Too few matches: {len(good_matches)}"
-            print("[ROIExtractor (ORB)]" + self.last_error)
+            log("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
         # 3. Homography estimation with RANSAC
@@ -289,7 +290,7 @@ class ORBExtractor(ROIExtractorTemplated):
 
         if H is None:
             self.last_error = "Homography estimation failed"
-            print("[ROIExtractor (ORB)]" + self.last_error)
+            log("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
         num_inliers = int(np.sum(mask))
@@ -298,12 +299,12 @@ class ORBExtractor(ROIExtractorTemplated):
         # Quality check
         if num_inliers < self.min_inliers:
             self.last_error = f"Too few inliers: {num_inliers}"
-            print("[ROIExtractor (ORB)]" + self.last_error)
+            log("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
         if inlier_ratio < self.inlier_ratio_threshold:
             self.last_error = f"Inlier ratio too low: {inlier_ratio:.2f}"
-            print("[ROIExtractor (ORB)]" + self.last_error)
+            log("[ROIExtractor (ORB)]" + self.last_error)
             return None, None, None
 
         return H, num_inliers, inlier_ratio

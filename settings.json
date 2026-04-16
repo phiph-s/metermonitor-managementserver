@@ -1,4 +1,5 @@
 {
+    "log_template": "%t %m",
     "max_history": 200,
     "max_evals": 100,
     "mqtt": {

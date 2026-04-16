@@ -1,3 +1,4 @@
+from lib.log import log
 import datetime
 import time
 import base64
@@ -23,25 +24,31 @@ class MQTTHandler:
         self.config = config
         self.forever = forever
         self.should_reconnect = True
+        self.topic = None
         # Use singleton instance (shared with HTTP server)
         self.meter_preditor = get_meter_predictor()
-        print("[MQTT] Using shared meter predictor singleton instance.")
+        log("[MQTT] Using shared meter predictor singleton instance.")
 
     # On connect, remove the alert for the frontend
     # Also publish registration messages for all known watermeters
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            print("[MQTT] Successfully connected to MQTT broker")
+            log("[MQTT] Successfully connected to MQTT broker")
             remove_alert("mqtt")
         else:
-            print(f"[MQTT] Connection failed with code {reason_code}")
+            log(f"[MQTT] Connection failed with code {reason_code}")
             add_alert("mqtt", "Failed to connect to MQTT broker")
             self._reconnect()
             return
 
+        # Re-subscribe on every connect (handles reconnect after disconnect)
+        if self.topic:
+            self.client.subscribe(self.topic)
+            log(f"[MQTT] Subscribed to topic '{self.topic}'")
+
         # send registration message for all watermeters
-        with sqlite3.connect(self.db_file) as conn:
+        with sqlite3.connect(self.db_file, timeout=30) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM watermeters")
             rows = cursor.fetchall()
@@ -51,7 +58,7 @@ class MQTTHandler:
 
     # On disconnect, add an alert for the frontend and try to reconnect
     def _on_disconnect(self, client, userdata, rc, properties=None, packet=None, reason=None):
-        print(f"Disconnected with code {rc}")
+        log(f"Disconnected with code {rc}")
         add_alert("mqtt", "Disconnected from MQTT broker")
         if self.should_reconnect:
             self._reconnect()
@@ -66,13 +73,13 @@ class MQTTHandler:
 
         while self.should_reconnect:
             try:
-                print(f"[MQTT] Reconnecting to MQTT broker...")
+                log(f"[MQTT] Reconnecting to MQTT broker...")
                 self.client.reconnect()
-                print("Reconnected successfully")
+                log("Reconnected successfully")
                 remove_alert("mqtt")
                 return  # Exit loop on success
             except Exception as e:
-                print(f"[MQTT] Reconnect failed: {e}, retrying in {delay} seconds...")
+                log(f"[MQTT] Reconnect failed: {e}, retrying in {delay} seconds...")
                 time.sleep(delay)
                 delay = min(delay * 2, max_delay)  # Exponential backoff
 
@@ -165,10 +172,10 @@ class MQTTHandler:
     def _process_message(self, data: Dict[str, Any]):
         try:
             if not self._validate_message(data):
-                print(f"[MQTT] Invalid message format received at {datetime.datetime.now().isoformat()}: {data}")
+                log(f"[MQTT] Invalid message format received at {datetime.datetime.now().isoformat()}: {data}")
                 return
 
-            print(f"[MQTT] Received message for watermeter {data['name']}")
+            log(f"[MQTT] Received message for watermeter {data['name']}")
 
 
             timestamp = self._parse_timestamp(data['picture'].get('timestamp'))
@@ -180,7 +187,7 @@ class MQTTHandler:
             picture_length = len(image_bytes)
             wifi_rssi = data.get('WiFi-RSSI')
 
-            with sqlite3.connect(self.db_file) as conn:
+            with sqlite3.connect(self.db_file, timeout=30) as conn:
 
                 cursor = conn.cursor()
                 #check if watermeter exists
@@ -277,10 +284,10 @@ class MQTTHandler:
                 result = cursor.fetchone()
 
                 if result is None or not result[0]:
-                    print(f"[MQTT] Source for watermeter {data['name']} is disabled or does not exist")
+                    log(f"[MQTT] Source for watermeter {data['name']} is disabled or does not exist")
                     return
                 
-                print(f"[MQTT] Saved/updated metadata of {data['name']} to database.")
+                log(f"[MQTT] Saved/updated metadata of {data['name']} to database.")
                 _, _, boundingboxed_image = reevaluate_latest_picture(self.db_file, data['name'], self.meter_preditor,
                                                                       self.config, publish=True,
                                                                       mqtt_client=self.client,
@@ -296,10 +303,10 @@ class MQTTHandler:
                         data['name']
                     ))
                     conn.commit()
-                    print(f"[MQTT] Saved boundingboxed image of {data['name']} to database.")
+                    log(f"[MQTT] Saved boundingboxed image of {data['name']} to database.")
 
         except Exception as e:
-            print(f"[MQTT] Error processing message: {e}")
+            log(f"[MQTT] Error processing message: {e}")
             # print traceback
             traceback.print_exc()
 
@@ -311,6 +318,7 @@ class MQTTHandler:
               username: str = None,
               password: str = None):
 
+        self.topic = topic
         add_alert("mqtt", "Connecting to MQTT broker")
 
         self.client.on_connect = self._on_connect
@@ -323,10 +331,10 @@ class MQTTHandler:
         try:
             self.client.connect(broker, port)
         except Exception as e:
-            print(f"[MQTT] Error connecting to MQTT broker: {e}")
+            log(f"[MQTT] Error connecting to MQTT broker: {e}")
             add_alert("mqtt", f"Failed to connect to MQTT broker: {e}")
             return
-        self.client.subscribe(topic)
+        # subscribe is handled in _on_connect to also cover reconnects
         if self.forever:
             self.client.loop_forever()
         else:

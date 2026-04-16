@@ -1,3 +1,4 @@
+from lib.log import log
 import datetime
 import time
 import threading
@@ -18,7 +19,7 @@ class PollingHandler:
         self.meter_predictor = get_meter_predictor()
         self.mqtt_client = mqtt_client
         self.stop_event = threading.Event()
-        print("[POLLING] Using shared meter predictor singleton instance.")
+        log("[POLLING] Using shared meter predictor singleton instance.")
 
     def _process_capture(self, source_row):
         source_id = source_row['id']
@@ -29,18 +30,18 @@ class PollingHandler:
         try:
             capture_and_process_source(self.config, self.db_file, source_row, self.meter_predictor, mqtt_client=self.mqtt_client)
             # On success, update last_success_ts and clear error
-            with sqlite3.connect(self.db_file) as conn:
+            with sqlite3.connect(self.db_file, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE sources SET last_success_ts = ?, last_error = NULL WHERE id = ?", (now, source_id))
                 conn.commit()
-            print(f"[POLLING] Successfully captured from source '{source_name}'")
+            log(f"[POLLING] Successfully captured from source '{source_name}'")
             remove_alert(alert_key)
         except Exception as e:
             # On failure, update last_success_ts to now to prevent immediate retry
             error_msg = str(e)
-            print(f"[POLLING] Error capturing from source '{source_name}': {error_msg}")
+            log(f"[POLLING] Error capturing from source '{source_name}': {error_msg}")
             traceback.print_exc()
-            with sqlite3.connect(self.db_file) as conn:
+            with sqlite3.connect(self.db_file, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE sources SET last_success_ts = ?, last_error = ? WHERE id = ?", (now, error_msg, source_id))
                 conn.commit()
@@ -49,7 +50,7 @@ class PollingHandler:
     def _polling_loop(self):
         while not self.stop_event.is_set():
             try:
-                with sqlite3.connect(self.db_file) as conn:
+                with sqlite3.connect(self.db_file, timeout=30) as conn:
                     conn.row_factory = sqlite3.Row
                     cursor = conn.cursor()
                     cursor.execute("""
@@ -72,7 +73,7 @@ class PollingHandler:
                     self._process_capture(source)
 
             except Exception as e:
-                print(f"[POLLING] Error in polling loop: {e}")
+                log(f"[POLLING] Error in polling loop: {e}")
                 traceback.print_exc()
 
             # Sleep for a short time before next check
@@ -81,10 +82,10 @@ class PollingHandler:
     def start(self):
         self.thread = threading.Thread(target=self._polling_loop, daemon=True)
         self.thread.start()
-        print("[POLLING] Polling handler started")
+        log("[POLLING] Polling handler started")
 
     def stop(self):
         self.stop_event.set()
         if hasattr(self, 'thread'):
             self.thread.join()
-        print("[POLLING] Polling handler stopped")
+        log("[POLLING] Polling handler stopped")

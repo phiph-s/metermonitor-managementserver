@@ -1,3 +1,4 @@
+from lib.log import log
 import sqlite3
 from datetime import datetime
 
@@ -18,7 +19,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         "denied_digits_count": 0,
         "timestamp_adjusted": False
     }
-    with sqlite3.connect(db_file) as conn:
+    with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
         segments = len(new_eval[2])
         # get last history entry
@@ -48,7 +49,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         try:
             new_time = datetime.fromisoformat(new_eval[3])
         except Exception as e:
-            print(f"[CorrectionAlg ({name})] Error parsing new evaluation time (assuming current): {e}")
+            log(f"[CorrectionAlg ({name})] Error parsing new evaluation time (assuming current): {e}")
             new_time = datetime.now()
 
         new_results = new_eval[2]
@@ -56,7 +57,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         metadata["denied_digits_count"] = sum(denied_digits) if denied_digits is not None and len(denied_digits) > 0 else 0
 
         if last_time >= new_time:
-            print(f"[CorrectionAlg ({name})] Time difference to last message is negative, assuming current time for correction")
+            log(f"[CorrectionAlg ({name})] Time difference to last message is negative, assuming current time for correction")
             new_time = datetime.now()
             metadata["timestamp_adjusted"] = True
 
@@ -150,7 +151,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                     **metadata
                 }
 
-            print(f"[CorrectionAlg LIGHT ({name})] Value accepted for time", new_time, "value", correctedValue)
+            log(f"[CorrectionAlg LIGHT ({name})] Value accepted for time", new_time, "value", correctedValue)
             return {
                 "accepted": True,
                 "value": int(correctedValue),
@@ -219,7 +220,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                                 digits_changed_vs_last += 1
                             if predictions is not None and len(predictions) > 0 and chosen_digit != predictions[0][0]:
                                 digits_changed_vs_top_pred += 1
-                            print(f"[CorrectionAlg ({name})] Negative correction accepted")
+                            log(f"[CorrectionAlg ({name})] Negative correction accepted")
                             break
 
             # if no digit was appended, append the original digit but reject the value
@@ -229,7 +230,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                 fallback_digit_count += 1
                 if predictions is not None and len(predictions) > 0 and lastChar != predictions[0][0]:
                     digits_changed_vs_top_pred += 1
-                print(f"[CorrectionAlg ({name})] Fallback: appending original digit", lastChar)
+                log(f"[CorrectionAlg ({name})] Fallback: appending original digit", lastChar)
 
         # get the flow rate and check if it is within the limits
         delta_raw = int(correctedValue) - int(last_value)
@@ -253,7 +254,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
             metadata["rejection_reason"] = "fallback_digit"
 
         if metadata["rejection_reason"]:
-            print(f"[CorrectionAlg ({name})] Flow rate is too high or negative")
+            log(f"[CorrectionAlg ({name})] Flow rate is too high or negative")
             return {
                 "accepted": False,
                 "value": None,
@@ -262,7 +263,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                 **metadata
             }
 
-        print (f"[CorrectionAlg ({name})] Value accepted for time", new_time, "flow rate", flow_rate_m3min, "value", correctedValue)
+        log(f"[CorrectionAlg ({name})] Value accepted for time", new_time, "flow rate", flow_rate_m3min, "value", correctedValue)
         return {
             "accepted": True,
             "value": int(correctedValue),
