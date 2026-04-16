@@ -293,6 +293,8 @@ const chartOptions = computed(() => ({
   },
   yaxis: {
     show: false,
+    min: 0,
+    max: 100,
   },
   grid: {
     show: false,
@@ -430,6 +432,7 @@ const chartOptions = computed(() => ({
 .card-footer {
   display: flex;
   align-items: center;
+  border-radius: 14px;
   justify-content: space-between;
   gap: 8px;
 }

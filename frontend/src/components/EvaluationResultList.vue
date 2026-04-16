@@ -55,22 +55,9 @@
             <div class="cell conf-cell">
               <div class="label">Confidence</div>
               <template v-if="evaluation.total_confidence">
-                <div class="conf-values" :style="{ color: getColor(evaluation.used_confidence) }">
-                  <n-tooltip trigger="hover" v-if="evaluation.used_confidence !== -1.0">
-                    <template #trigger>
-                      <span class="conf-primary"><b>{{ (evaluation.used_confidence * 100).toFixed(1) }}</b>%</span>
-                    </template>
-                    Used confidence: Only digits accepted by the correction algorithm
-                  </n-tooltip>
-                  <n-tooltip trigger="hover">
-                    <template #trigger>
-                      <span class="conf-secondary" :style="{ color: getColor(evaluation.total_confidence) }">
-                        {{ (evaluation.total_confidence * 100).toFixed(1) }}%
-                      </span>
-                    </template>
-                    Total confidence: All recognized digits
-                  </n-tooltip>
-                </div>
+                <span :style="{ color: getColor(evaluation.total_confidence) }">
+                  <b>{{ (evaluation.total_confidence * 100).toFixed(1) }}</b>%
+                </span>
               </template>
               <div v-else class="rejected-label">
                 Rejected
@@ -229,7 +216,7 @@ const formattedTimestamp = (ts) => {
   const date = new Date(ts);
   const diffMs = date.getTime() - Date.now();
   const diffSeconds = Math.round(diffMs / 1000);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat("en-US", { numeric: 'auto' });
   const absSeconds = Math.abs(diffSeconds);
 
   if (absSeconds < 20) return 'just now';

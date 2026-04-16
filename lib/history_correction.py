@@ -80,6 +80,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         totalConfidence = 1.0
         # used confidence tracks the confidence of digits that actually are being funneled into the correction
         usedConfidence = 1.0
+        total_conf_values = []
+        used_conf_values = []
         negative_corrected = False
         digits_changed_vs_last = 0
         digits_changed_vs_top_pred = 0
@@ -109,8 +111,10 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                     else:
                         chosen_digit = lastChar
                     totalConfidence *= prediction[1]
+                    total_conf_values.append(prediction[1])
                     if not denied_digits[i]:
                         usedConfidence *= prediction[1]
+                        used_conf_values.append(prediction[1])
                     correctedValue += chosen_digit
                     if chosen_digit != lastChar:
                         digits_changed_vs_last += 1
@@ -122,6 +126,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                     chosen_digit = prediction[0]
                     totalConfidence *= prediction[1]
                     usedConfidence *= prediction[1]
+                    total_conf_values.append(prediction[1])
+                    used_conf_values.append(prediction[1])
                     correctedValue += chosen_digit
                     if chosen_digit != lastChar:
                         digits_changed_vs_last += 1
@@ -155,8 +161,8 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
             return {
                 "accepted": True,
                 "value": int(correctedValue),
-                "total_confidence": totalConfidence,
-                "used_confidence": usedConfidence,
+                "total_confidence": sum(total_conf_values) / len(total_conf_values) if total_conf_values else 0.0,
+                "used_confidence": sum(used_conf_values) / len(used_conf_values) if used_conf_values else 0.0,
                 **metadata
             }
 
@@ -189,7 +195,10 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                 if int(tempValue) >= int(last_value[:i+1]) or negative_corrected and tempConfidence > 0.15:
                     correctedValue = tempValue
                     totalConfidence = tempConfidence
-                    if not denied_digits[i]: usedConfidence *= prediction[1]
+                    total_conf_values.append(prediction[1])
+                    if not denied_digits[i]:
+                        usedConfidence *= prediction[1]
+                        used_conf_values.append(prediction[1])
                     digit_appended = True
                     if prediction_index < len(prediction_rank_used_counts):
                         prediction_rank_used_counts[prediction_index] += 1
@@ -211,7 +220,9 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
                                 int(tempValue) >= int(pre_last_value[:i+1]):
                             correctedValue = tempValue
                             totalConfidence = tempConfidence
+                            total_conf_values.append(prediction[1])
                             usedConfidence *= prediction[1]
+                            used_conf_values.append(prediction[1])
                             digit_appended = True
                             negative_corrected = True
                             if prediction_index < len(prediction_rank_used_counts):
@@ -267,7 +278,7 @@ def correct_value(db_file: str, name: str, new_eval, allow_negative_correction =
         return {
             "accepted": True,
             "value": int(correctedValue),
-            "total_confidence": totalConfidence,
-            "used_confidence": usedConfidence,
+            "total_confidence": sum(total_conf_values) / len(total_conf_values) if total_conf_values else 0.0,
+            "used_confidence": sum(used_conf_values) / len(used_conf_values) if used_conf_values else 0.0,
             **metadata
         }

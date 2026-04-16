@@ -23,6 +23,33 @@
             </n-tag>
           </div>
           <div class="header-right">
+            <n-popover
+              v-if="alertKeys.length > 0"
+              trigger="click"
+              placement="bottom-end"
+              :show-arrow="false"
+            >
+              <template #trigger>
+                <n-tag
+                  :type="pillType"
+                  size="medium"
+                  round
+                  class="alert-pill"
+                  style="cursor: pointer;"
+                >
+                  <template #icon>
+                    <n-icon><WarningAmberOutlined /></n-icon>
+                  </template>
+                  {{ alertKeys.length }} Alert{{ alertKeys.length !== 1 ? 's' : '' }}
+                </n-tag>
+              </template>
+              <div class="alert-dropdown">
+                <div v-for="key in alertKeys" :key="key" :class="['alert-item', `alert-item--${getAlertType(key, alerts[key])}`]">
+                  <span class="alert-key">{{ key }}</span>
+                  <span class="alert-msg">{{ alerts[key] }}</span>
+                </div>
+              </div>
+            </n-popover>
             <n-tooltip trigger="hover">
               <template #trigger>
                 <n-button
@@ -61,8 +88,8 @@
 </template>
 
 <script setup>
-import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NTag, useNotification} from 'naive-ui';
-import { LightModeOutlined, DarkModeOutlined } from '@vicons/material';
+import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NTag, NPopover} from 'naive-ui';
+import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined } from '@vicons/material';
 import {onMounted, onUnmounted, ref, computed, reactive, provide} from "vue";
 import WhatsNewDialog from '@/components/WhatsNewDialog.vue';
 import { useRoute } from 'vue-router';
@@ -112,9 +139,25 @@ const cycleTheme = () => {
 
 const showBack = computed(() => route.path !== '/');
 
-const alerts = ref([]);
+const alerts = ref({});
+const alertKeys = computed(() => Object.keys(alerts.value));
 
-const notification = useNotification();
+const getAlertType = (key, message) => {
+  if (key === 'authentication') return 'warning';
+  if (key === 'mqtt' && message?.toLowerCase().includes('connecting')) return 'info';
+  return 'error';
+};
+
+const pillType = computed(() => {
+  for (const key of alertKeys.value) {
+    if (getAlertType(key, alerts.value[key]) === 'error') return 'error';
+  }
+  for (const key of alertKeys.value) {
+    if (getAlertType(key, alerts.value[key]) === 'warning') return 'warning';
+  }
+  return 'info';
+});
+
 const host = import.meta.env.VITE_HOST;
 const websocket = ref(null);
 const reconnectTimer = ref(null);
@@ -160,6 +203,8 @@ const connectWebsocket = () => {
       const payload = JSON.parse(_event.data);
       if (payload?.type === 'evaluation_created') {
         window.dispatchEvent(new CustomEvent('meter-evaluation-updated', { detail: payload }));
+      } else if (payload?.type === 'alerts_updated') {
+        alerts.value = payload.alerts ?? {};
       }
     } catch (_err) {
       // Ignore malformed websocket payloads.
@@ -176,38 +221,29 @@ const connectWebsocket = () => {
   };
 };
 
-const updateAlerts = async () => {
-  const r = await fetch(host + 'api/alerts', {
-    headers: {secret: localStorage.getItem('secret')}
-  })
-
-  if (r.status === 401) {
-    await router.push({path: '/unlock'});
-    return;
-  }
-
-  alerts.value = await r.json();
-  notification.destroyAll();
-  for (const alert of Object.keys(alerts.value)) {
-    notification.create({
-      title: alert.toUpperCase(),
-      content: alerts.value[alert],
-      closable: false,
-      type: 'error'
+const fetchInitialAlerts = async () => {
+  try {
+    const r = await fetch(host + 'api/alerts', {
+      headers: {secret: localStorage.getItem('secret')}
     });
+    if (r.status === 401) {
+      await router.push({path: '/unlock'});
+      return;
+    }
+    alerts.value = await r.json();
+  } catch (_err) {
+    // Will be updated via WebSocket once connected
   }
-}
-const interval = ref(null);
+};
+
 onMounted(() => {
   websocketStopped.value = false;
-  updateAlerts();
-  interval.value = setInterval(updateAlerts, 60000);
+  fetchInitialAlerts();
   connectWebsocket();
 });
 
 onUnmounted(() => {
   websocketStopped.value = true;
-  clearInterval(interval.value);
   if (reconnectTimer.value) clearTimeout(reconnectTimer.value);
   if (websocket.value) websocket.value.close();
 });
@@ -266,6 +302,55 @@ onUnmounted(() => {
 
 .build-tag {
   margin-left: 4px;
+}
+
+.alert-pill {
+  font-weight: 600;
+}
+
+.alert-dropdown {
+  min-width: 220px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alert-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+}
+
+.alert-item--error {
+  border-left-color: #d03050;
+  background: rgba(208, 48, 80, 0.08);
+}
+
+.alert-item--warning {
+  border-left-color: #f0a020;
+  background: rgba(240, 160, 32, 0.08);
+}
+
+.alert-item--info {
+  border-left-color: #2080f0;
+  background: rgba(32, 128, 240, 0.08);
+}
+
+.alert-key {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.6;
+  letter-spacing: 0.05em;
+}
+
+.alert-msg {
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .back-slide-enter-active,

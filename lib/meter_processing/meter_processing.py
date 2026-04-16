@@ -112,8 +112,7 @@ class MeterPredictor:
 
         if use_templated_extractor and rotated_180:
             digits = [cv2.rotate(digit, cv2.ROTATE_180) for digit in digits]
-            if segment_mode == "display":
-                digits = list(reversed(digits))
+            digits = list(reversed(digits))
 
         # Adjust brightness of each image
         mean_brightnesses = [np.mean(img) for img in digits]

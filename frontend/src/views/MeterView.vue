@@ -101,6 +101,7 @@ const store = useWatermeterStore();
 const { lastPicture: data, evaluations, history, settings } = storeToRefs(store);
 
 const loading = ref(false);
+const refreshing = ref(false);
 const downloadingDataset = ref(false);
 const isMobile = ref(window.innerWidth < 1000);
 const headerControls = useHeaderControls();
@@ -115,15 +116,15 @@ onMounted(() => {
   evaluationEventHandler = (event) => {
     const meterName = event?.detail?.name;
     if (meterName && meterName === id.value) {
-      loadMeter();
+      refreshMeter();
     }
   };
   window.addEventListener('meter-evaluation-updated', evaluationEventHandler);
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
-      onRefresh: loadMeter,
-      refreshLoading: loading.value
+      onRefresh: refreshMeter,
+      refreshLoading: refreshing.value
     });
   }
 });
@@ -138,17 +139,18 @@ onUnmounted(() => {
   }
 });
 
-watch(loading, (next) => {
+watch(refreshing, (next) => {
   if (!headerControls) return;
   headerControls.setHeader({ refreshLoading: next });
 });
 
 const host = import.meta.env.VITE_HOST;
 
+// Initial load: resets data and shows skeletons (used on mount / meter change)
 const loadMeter = async () => {
   loading.value = true;
+  store.resetMeterData();
   try {
-    store.resetMeterData();
     await store.fetchAll(id.value);
   } catch (e) {
     if (e.response && e.response.status === 401) {
@@ -156,6 +158,19 @@ const loadMeter = async () => {
     }
   }
   loading.value = false;
+};
+
+// Background refresh: keeps components mounted, updates data silently
+const refreshMeter = async () => {
+  refreshing.value = true;
+  try {
+    await store.fetchAll(id.value);
+  } catch (e) {
+    if (e.response && e.response.status === 401) {
+      router.push({ path: '/unlock' });
+    }
+  }
+  refreshing.value = false;
 };
 
 watch(
@@ -218,7 +233,7 @@ const triggerCapture = async () => {
     }
 
     // refresh meter data to get the new picture
-    await loadMeter();
+    await refreshMeter();
   } catch (err) {
     message.error('Error triggering capture: ' + err.message);
     console.log('Error triggering capture:', err);
@@ -262,7 +277,7 @@ const deleteDataset = async () => {
 
     if (response.status === 200) {
       // Reload meter data to update dataset_present status
-      await loadMeter();
+      await refreshMeter();
     } else {
       console.log('Error deleting dataset');
     }
@@ -289,7 +304,7 @@ const clearEvaluations = async () => {
       });
 
       // Reload meter data to update evaluations
-      await loadMeter();
+      await refreshMeter();
     } else {
       console.log('Error clearing evaluations');
     }

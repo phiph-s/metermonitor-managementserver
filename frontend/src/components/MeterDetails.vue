@@ -357,7 +357,7 @@ const handleMenuSelect = (key) => {
   if (key === 'setup') {
     dialog.info({
       title: 'Enter Setup Mode',
-      content: 'While the meter is in setup mode, no values will be published. Are you sure?',
+      content: 'While the meter is in setup mode, no values will be published. Are you sure? Most settings can be changed below by pressing "Edit" without entering setup mode.',
       positiveText: 'Setup',
       negativeText: 'Cancel',
       onPositiveClick: () => emit('resetToSetup')

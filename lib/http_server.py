@@ -32,7 +32,7 @@ from starlette.responses import JSONResponse, FileResponse, StreamingResponse
 from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits
 from lib.ha_flash_suggestion import suggest_flash_entity
 from lib.model_singleton import get_meter_predictor
-from lib.global_alerts import get_alerts, add_alert
+from lib.global_alerts import get_alerts, add_alert, remove_alert, set_change_callback
 from lib.ha_auth import get_ha_token, add_ha_auth_header
 from lib.threshold_optimizer import search_thresholds_for_meter
 from lib.capture_utils import capture_and_process_source, capture_from_ha_source, capture_from_http_source
@@ -48,6 +48,9 @@ def prepare_setup_app(config, lifespan):
     app = FastAPI(lifespan=lifespan)
     SECRET_KEY = config['secret_key']
     db_connection = lambda: sqlite3.connect(config['dbfile'])
+
+    # Push alert changes over WebSocket
+    set_change_callback(lambda current_alerts: evaluation_event_hub.notify({"type": "alerts_updated", "alerts": current_alerts}))
 
     # Warn user if secret key is not changed
     if config['secret_key'] == "change_me" and config['enable_auth']:
@@ -92,7 +95,7 @@ def prepare_setup_app(config, lifespan):
         if config['enable_auth'] and secret != SECRET_KEY:
             await websocket.close(code=1008)
             return
-        await evaluation_event_hub.add_client(websocket)
+        await evaluation_event_hub.add_client(websocket, initial_payload={"type": "alerts_updated", "alerts": get_alerts()})
         try:
             while True:
                 await websocket.receive_text()
@@ -1192,6 +1195,10 @@ def prepare_setup_app(config, lifespan):
         cursor.execute("DELETE FROM settings WHERE name = ?", (name,))
         cursor.execute("DELETE FROM sources WHERE name = ?", (name,))
         db.commit()
+        # Remove any alerts associated with this meter
+        for key in list(get_alerts().keys()):
+            if key.startswith(f'polling_{name}'):
+                remove_alert(key)
         return {"message": "Watermeter deleted", "name": name}
 
     @app.post("/api/setup", dependencies=[Depends(authenticate)])
