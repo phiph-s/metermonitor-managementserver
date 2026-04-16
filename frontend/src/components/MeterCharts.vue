@@ -46,6 +46,10 @@ const props = defineProps({
   history: {
     type: Object,
     default: null
+  },
+  unit: {
+    type: String,
+    default: 'm³'
   }
 });
 
@@ -175,7 +179,7 @@ const formatUsage = (value) => {
   if (value === null || value === undefined || value === '—') return '—';
   const numeric = Number(value);
   if (Number.isNaN(numeric)) return '—';
-  return `${numeric.toFixed(2)} m³`;
+  return `${numeric.toFixed(2)} ${props.unit}`;
 };
 
 const usageColor = computed(() => (isDark.value ? '#22d3ee' : '#0ea5e9'));
@@ -227,7 +231,7 @@ const combinedChartOptions = computed(() => ({
   tooltip: {
     x: { show: false },
     y: [
-      { formatter: (value) => `${value.toFixed(3)} m³` },
+      { formatter: (value) => `${value.toFixed(3)} ${props.unit}` },
       { formatter: (value) => `${value.toFixed(1)}%` }
     ],
     marker: { show: false }

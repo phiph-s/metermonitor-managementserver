@@ -146,6 +146,8 @@ export const useSetupStore = defineStore('setup', () => {
     watermeterStore.settings.rotated_180 = data.rotated180;
     watermeterStore.settings.roi_extractor = nextExtractor;
     watermeterStore.settings.segment_mode = nextSegmentMode;
+    if (data.meterType !== undefined) watermeterStore.settings.meter_type = data.meterType;
+    if (data.unit !== undefined) watermeterStore.settings.unit = data.unit;
 
     if (nextExtractor !== previousExtractor || nextSegmentMode !== previousSegmentMode) {
       if (!isTemplateExtractor(nextExtractor) || previousExtractor !== nextExtractor || nextSegmentMode !== previousSegmentMode) {

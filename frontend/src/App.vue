@@ -4,25 +4,25 @@
     <n-layout>
       <n-layout-content content-style="padding: 24px;">
         <div class="app-header">
-          <div class="header-left">
-            <transition name="back-slide" mode="out-in">
-              <router-link v-if="showBack" to="/" key="back">
-                <n-button quaternary round size="large" style="padding: 0; font-size: 16px;">
-                  ← Back
-                </n-button>
-              </router-link>
-            </transition>
-            <img
-              src="@/assets/logo.png"
-              alt="Logo"
-              class="theme-revert header-logo"
-              :class="{ 'no-back': !showBack }"
-            />
+          <div class="header-bar">
+            <div class="header-left">
+              <transition name="back-slide" mode="out-in">
+                <router-link v-if="showBack" to="/" key="back" class="back-btn-wrapper">
+                  <n-button quaternary round size="large" style="padding: 0; font-size: 16px;">
+                    ← Back
+                  </n-button>
+                </router-link>
+              </transition>
+              <img
+                src="@/assets/logo.png"
+                alt="Logo"
+                class="theme-revert header-logo"
+              />
+            </div>
+            <div class="header-right">
             <n-tag size="small" :type="buildTagType" class="build-tag">
               {{ buildTagLabel }}
             </n-tag>
-          </div>
-          <div class="header-right">
             <n-popover
               v-if="alertKeys.length > 0"
               trigger="click"
@@ -30,18 +30,16 @@
               :show-arrow="false"
             >
               <template #trigger>
-                <n-tag
-                  :type="pillType"
-                  size="medium"
-                  round
-                  class="alert-pill"
-                  style="cursor: pointer;"
+                <n-button
+                  circle
+                  quaternary
+                  size="small"
+                  :style="{ color: alertIconColor }"
                 >
                   <template #icon>
-                    <n-icon><WarningAmberOutlined /></n-icon>
+                    <n-icon size="18"><WarningAmberOutlined /></n-icon>
                   </template>
-                  {{ alertKeys.length }} Alert{{ alertKeys.length !== 1 ? 's' : '' }}
-                </n-tag>
+                </n-button>
               </template>
               <div class="alert-dropdown">
                 <div v-for="key in alertKeys" :key="key" :class="['alert-item', `alert-item--${getAlertType(key, alerts[key])}`]">
@@ -70,13 +68,17 @@
             </n-tooltip>
             <n-button
               v-if="headerState.showRefresh"
+              circle
+              quaternary
+              size="small"
               :loading="headerState.refreshLoading"
               @click="headerState.onRefresh && headerState.onRefresh()"
-              round
-              size="large"
             >
-              Refresh
+              <template #icon>
+                <n-icon size="18"><RefreshOutlined /></n-icon>
+              </template>
             </n-button>
+            </div>
           </div>
         </div>
         <router-view></router-view>
@@ -89,7 +91,7 @@
 
 <script setup>
 import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NTag, NPopover} from 'naive-ui';
-import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined } from '@vicons/material';
+import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined, RefreshOutlined } from '@vicons/material';
 import {onMounted, onUnmounted, ref, computed, reactive, provide} from "vue";
 import WhatsNewDialog from '@/components/WhatsNewDialog.vue';
 import { useRoute } from 'vue-router';
@@ -156,6 +158,13 @@ const pillType = computed(() => {
     if (getAlertType(key, alerts.value[key]) === 'warning') return 'warning';
   }
   return 'info';
+});
+
+const alertIconColor = computed(() => {
+  const t = pillType.value;
+  if (t === 'error') return '#d03050';
+  if (t === 'warning') return '#f0a020';
+  return '#2080f0';
 });
 
 const host = import.meta.env.VITE_HOST;
@@ -269,43 +278,52 @@ onUnmounted(() => {
 }
 
 .app-header {
+  margin-bottom: 16px;
+}
+
+.back-btn-wrapper {
+  display: inline-flex;
+  text-decoration: none;
+}
+
+.header-bar {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.light-mode .header-bar {
+  background: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
 }
+
 .header-logo {
   max-width: 100px;
-  margin-left: 20px;
-  transition: margin-left 0.2s ease;
 }
 
 .n-dialog{
   border-radius: 12px;
 }
 
-.header-logo.no-back {
-  margin-left: 0;
-}
-
 .build-tag {
-  margin-left: 4px;
-}
-
-.alert-pill {
-  font-weight: 600;
+  margin-right: 4px;
 }
 
 .alert-dropdown {
@@ -355,16 +373,15 @@ onUnmounted(() => {
 
 .back-slide-enter-active,
 .back-slide-leave-active {
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
+  overflow: hidden;
+  max-width: 120px;
 }
 
-.back-slide-enter-from {
-  opacity: 0;
-  transform: translateX(-8px);
-}
-
+.back-slide-enter-from,
 .back-slide-leave-to {
   opacity: 0;
+  max-width: 0;
   transform: translateX(-8px);
 }
 </style>

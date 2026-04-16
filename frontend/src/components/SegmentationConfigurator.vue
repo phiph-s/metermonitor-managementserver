@@ -23,6 +23,28 @@
       </n-input-number>
     </n-flex>
 
+    <n-flex justify="space-between" align="center" style="margin-top: 12px;">
+      <span>Meter Type</span>
+      <n-select
+        :value="meterType"
+        :options="meterTypeOptions"
+        :disabled="loading"
+        style="width: 180px;"
+        @update:value="handleUpdate('meterType', $event)"
+      />
+    </n-flex>
+
+    <n-flex v-if="meterType === 'CUSTOM'" justify="space-between" align="center" style="margin-top: 12px;">
+      <span>Unit</span>
+      <n-input
+        :value="unit"
+        placeholder="e.g. kWh, m³, L"
+        :disabled="loading"
+        style="width: 180px;"
+        @update:value="handleUpdate('unit', $event)"
+      />
+    </n-flex>
+
   </n-card><br>
   <n-card size="small">
     <template #cover>
@@ -201,8 +223,8 @@
 </template>
 
 <script setup>
-import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon} from 'naive-ui';
-import {defineProps, defineEmits, computed} from 'vue';
+import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon, NSelect, NInput} from 'naive-ui';
+import {defineProps, defineEmits, computed, h} from 'vue';
 import {
   AddCircleOutlineOutlined,
   CameraAltOutlined,
@@ -210,6 +232,7 @@ import {
   RotateRightOutlined,
   GridViewOutlined
 } from '@vicons/material';
+import { meterTypeColors, meterTypeLabels, METER_TYPES } from '@/utils/meterTypeMeta';
 import TemplatePointEditor from '@/components/TemplatePointEditor.vue';
 import TemplateDigitEditor from '@/components/TemplateDigitEditor.vue';
 import ROIExtractorSelect from '@/components/ROIExtractorSelect.vue';
@@ -231,7 +254,9 @@ const props = defineProps([
     'capturing',
     'loading',
     'noBoundingBox',
-    'reevaluateError'
+    'reevaluateError',
+    'meterType',
+    'unit'
 ]);
 const emits = defineEmits(['update', 'next', 'recapture', 'updateTemplatePoints', 'updateDigitQuads', 'saveTemplate']);
 
@@ -260,6 +285,15 @@ const isTemplateExtractor = computed(() => ['orb', 'static_rect'].includes(curre
 const segmentModeValue = computed(() => props.segmentMode || 'display');
 const isEachDigitMode = computed(() => segmentModeValue.value === 'each_digit');
 
+const meterTypeOptions = METER_TYPES.map(t => ({
+  label: meterTypeLabels[t],
+  value: t,
+  renderLabel: () => h('span', [
+    h('span', { style: { color: meterTypeColors[t], fontWeight: 700, marginRight: '6px' } }, '●'),
+    meterTypeLabels[t],
+  ]),
+}));
+
 const handleUpdate = (field, value) => {
   emits('update', {
     segments: field === 'segments' ? value : props.segments,
@@ -267,7 +301,9 @@ const handleUpdate = (field, value) => {
     last3DigitsNarrow: field === 'last3DigitsNarrow' ? value : props.last3DigitsNarrow,
     rotated180: field === 'rotated180' ? value : props.rotated180,
     roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor,
-    segmentMode: field === 'segmentMode' ? value : props.segmentMode
+    segmentMode: field === 'segmentMode' ? value : props.segmentMode,
+    meterType: field === 'meterType' ? value : props.meterType,
+    unit: field === 'unit' ? value : props.unit,
   });
 };
 

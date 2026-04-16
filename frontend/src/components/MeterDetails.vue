@@ -106,7 +106,7 @@
       </div>
     </template>
 
-    <MeterCharts :history="history" style="margin-top: 12px;" />
+    <MeterCharts :history="history" :unit="meterUnit" style="margin-top: 12px;" />
     
     <template v-if="data && data['WiFi-RSSI']">
       <WifiStatus v-if="data && data['WiFi-RSSI']" :rssi="data['WiFi-RSSI']" />
@@ -198,6 +198,20 @@
           <div class="chip-value">{{ settings.use_correctional_alg ? 'Full' : 'Light' }}</div>
         </div>
       </div>
+      <div class="setting-chip">
+        <n-icon><WaterDropOutlined /></n-icon>
+        <div>
+          <div class="chip-label">Meter Type</div>
+          <div class="chip-value" :style="{ color: meterTypeColor }">{{ meterTypeLabel }}</div>
+        </div>
+      </div>
+      <div v-if="settings.meter_type === 'CUSTOM'" class="setting-chip">
+        <n-icon><TagOutlined /></n-icon>
+        <div>
+          <div class="chip-label">Unit</div>
+          <div class="chip-value">{{ settings.unit || '—' }}</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -268,8 +282,11 @@ import {
   WarningAmberOutlined,
   ErrorOutlineOutlined,
   RefreshOutlined,
-  EditOutlined
+  EditOutlined,
+  WaterDropOutlined,
+  TagOutlined
 } from '@vicons/material';
+import { getMeterUnit, getMeterTypeColor, getMeterTypeLabel } from '@/utils/meterTypeMeta';
 import MeterSettingsModal from '@/components/MeterSettingsModal.vue';
 import WifiStatus from "@/components/WifiStatus.vue";
 import {useWatermeterStore} from "@/stores/watermeterStore";
@@ -507,6 +524,10 @@ const extractorLabel = computed(() => {
   if (value === 'yolo') return 'AUTO (YOLO)';
   return value.toUpperCase();
 });
+
+const meterUnit = computed(() => getMeterUnit(props.settings?.meter_type || 'WATER', props.settings?.unit));
+const meterTypeColor = computed(() => getMeterTypeColor(props.settings?.meter_type || 'WATER'));
+const meterTypeLabel = computed(() => getMeterTypeLabel(props.settings?.meter_type || 'WATER'));
 
 const formattedTimestamp = computed(() => {
   if (!props.data?.picture?.timestamp) return '';

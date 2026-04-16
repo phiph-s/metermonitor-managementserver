@@ -480,3 +480,17 @@ def run_migrations(db_file):
         if 'use_correctional_alg' not in columns:
             cursor.execute("ALTER TABLE settings ADD COLUMN use_correctional_alg BOOLEAN DEFAULT true")
             log("[MIGRATION] Added 'use_correctional_alg' column to 'settings' table")
+
+        # add meter_type and unit columns to watermeters table
+        cursor.execute("PRAGMA table_info(watermeters)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'meter_type' not in columns:
+            cursor.execute("ALTER TABLE watermeters ADD COLUMN meter_type TEXT DEFAULT 'WATER'")
+            cursor.execute("UPDATE watermeters SET meter_type = 'WATER' WHERE meter_type IS NULL")
+            log("[MIGRATION] Added 'meter_type' column to 'watermeters' table")
+
+        cursor.execute("PRAGMA table_info(watermeters)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'unit' not in columns:
+            cursor.execute("ALTER TABLE watermeters ADD COLUMN unit TEXT DEFAULT NULL")
+            log("[MIGRATION] Added 'unit' column to 'watermeters' table")

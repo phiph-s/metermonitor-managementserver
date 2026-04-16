@@ -117,7 +117,7 @@
                 {{ digit }}
               </template>
             </span>
-            <span style="font-size: 24px; opacity: 0.7;">m³</span>
+            <span style="font-size: 24px; opacity: 0.7;">{{ meterUnit }}</span>
           </n-space>
         </n-card>
 
@@ -180,6 +180,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { getMeterUnit } from '@/utils/meterTypeMeta';
 import {
   NModal,
   NSpace,
@@ -197,7 +198,9 @@ import {
 const props = defineProps({
   show: { type: Boolean, default: false },
   evaluationId: { type: Number, default: null },
-  meterName: { type: String, required: true }
+  meterName: { type: String, required: true },
+  meterType: { type: String, default: 'WATER' },
+  unit: { type: String, default: null }
 });
 
 const emit = defineEmits(['update:show']);
@@ -249,12 +252,14 @@ const formatBool = (value) => {
 
 const formatFlowRate = (value) => {
   if (value === null || value === undefined) return '—';
-  return `${formatNumber(value, 3)} m³/h`;
+  return `${formatNumber(value, 3)} ${meterUnit.value}/h`;
 };
+
+const meterUnit = computed(() => getMeterUnit(props.meterType, props.unit));
 
 const formatDelta = (value) => {
   if (value === null || value === undefined) return '—';
-  return `${formatNumber(value, 3)} m³`;
+  return `${formatNumber(value, 3)} ${meterUnit.value}`;
 };
 
 const formatMinutes = (value) => {

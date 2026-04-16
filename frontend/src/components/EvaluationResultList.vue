@@ -47,7 +47,7 @@
                       {{ digit }}
                     </template>
                   </span>
-                  <span class="adjustment unit">m³</span>
+                  <span class="adjustment unit">{{ meterUnit }}</span>
                 </div>
               </div>
             </div>
@@ -123,12 +123,15 @@
       v-model:show="showDetailDialog"
       :evaluation-id="selectedEvaluationId"
       :meter-name="props.name"
+      :meter-type="props.meterType"
+      :unit="props.unit"
     />
   </div>
 </template>
 
 <script setup>
-import {defineProps, h, defineEmits, ref, onMounted, onUnmounted, watch} from 'vue';
+import {defineProps, h, defineEmits, ref, onMounted, onUnmounted, watch, computed} from 'vue';
+import { getMeterUnit } from '@/utils/meterTypeMeta';
 import {NFlex, NTooltip, NEmpty, NButton, NIcon, useDialog} from 'naive-ui';
 import { ArchiveOutlined, ArrowDownwardOutlined } from '@vicons/material';
 import DatasetUploader from "@/components/DatasetUploader.vue";
@@ -155,8 +158,18 @@ const props = defineProps({
   decimals: {
     type: Number,
     default: 3
+  },
+  meterType: {
+    type: String,
+    default: 'WATER'
+  },
+  unit: {
+    type: String,
+    default: null
   }
 });
+
+const meterUnit = computed(() => getMeterUnit(props.meterType, props.unit));
 
 const getDecimals = (digitLength) => {
   const maxDigits = Number.isFinite(digitLength) ? digitLength : 0;

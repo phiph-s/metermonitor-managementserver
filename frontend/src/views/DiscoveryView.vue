@@ -28,7 +28,7 @@
         <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true" style="margin-left: 20px;">
           <div class="add-card-inner">
             <n-icon><AddOutlined /></n-icon>
-            <span>Add watermeter</span>
+            <span>Add meter</span>
           </div>
         </div>
       </n-flex>
@@ -36,35 +36,47 @@
       <MQTTSetupHelper :config="config"/>
     </n-space>
   </div>
-
+  <br>
   <template v-if="discoveredMeters.length > 0">
-    <div class="elevated-list">
-      <div class="elevated-title">
-        <n-icon><PendingActionsOutlined /></n-icon>
-        <span>Waiting for setup</span>
-      </div>
-      <n-flex>
-        <WaterMeterCard
-          v-for="item in discoveredMeters"
-          :key="item.id"
-          :last_updated="item[1]"
-          :meter_name="item[0]"
-          :setup="true"
-          :rssi="item[2]"
-          :source_type="item[3]"
-          @removed="getData"
-        />
-      </n-flex>
+    <div class="elevated-title">
+      <n-icon><PendingActionsOutlined /></n-icon>
+      <span>Waiting for setup</span>
     </div>
+    <n-flex>
+      <WaterMeterCard
+        v-for="item in discoveredMeters"
+        :key="item.id"
+        :last_updated="item[1]"
+        :meter_name="item[0]"
+        :setup="true"
+        :rssi="item[2]"
+        :source_type="item[3]"
+        @removed="getData"
+      />
+    </n-flex>
+    <br>
   </template>
+  <div v-if="waterMeters.length > 0" class="filter-row">
+    <n-button
+      v-for="pill in filterPills"
+      :key="pill.value"
+      :type="activeFilter === pill.value ? 'primary' : 'default'"
+      size="small"
+      round
+      @click="activeFilter = pill.value"
+    >
+      <template v-if="pill.color" #icon>
+        <span :style="{ color: pill.color, fontSize: '10px' }">●</span>
+      </template>
+      {{ pill.label }}
+    </n-button>
+  </div>
 
-  <n-h2 v-if="waterMeters.length > 0">Watermeters</n-h2>
-
-  <template v-if="waterMeters.length > 0">
+  <template v-if="filteredWaterMeters.length > 0">
     <n-flex class="watermeters-row">
       <WaterMeterCard
-          v-for="item in waterMeters"
-          :key="item.id"
+          v-for="item in filteredWaterMeters"
+          :key="item[0]"
           :last_updated="item[1]"
           :meter_name="item[0]"
           :setup="false"
@@ -73,14 +85,16 @@
           :last_result="item[3]"
           :has_bbox="item[5]"
           :decimals="item[6]"
-          :last_error="item[7]"
-          :source_type="item[8]"
+          :meter_type="item[7]"
+          :unit="item[8]"
+          :last_error="item[9]"
+          :source_type="item[10]"
           @removed="getData"
       />
       <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true">
         <div class="add-card-inner">
           <n-icon><AddOutlined /></n-icon>
-          <span>Add watermeter</span>
+          <span>Add meter</span>
         </div>
       </div>
     </n-flex>
@@ -89,7 +103,7 @@
     <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true" >
       <div class="add-card-inner">
         <n-icon><AddOutlined /></n-icon>
-        <span>Add watermeter</span>
+        <span>Add meter</span>
       </div>
     </div>
   </n-flex>
@@ -97,7 +111,7 @@
 </template>
 
 <script setup>
-import {onMounted, onUnmounted, ref, watch} from 'vue';
+import {onMounted, onUnmounted, ref, computed, watch} from 'vue';
 import {NButton, NDivider, NFlex, NH2, NIcon, NSpace} from 'naive-ui';
 import router from "@/router";
 import WaterMeterCard from "@/components/WaterMeterCard.vue";
@@ -105,6 +119,7 @@ import AddSourceDialog from "@/components/AddSourceDialog.vue";
 import {useHeaderControls} from '@/composables/headerControls';
 import {AddOutlined, PendingActionsOutlined} from '@vicons/material';
 import MQTTSetupHelper from "@/views/MQTTSetupHelper.vue";
+import { meterTypeColors, meterTypeLabels, METER_TYPES } from '@/utils/meterTypeMeta';
 
 const discoveredMeters = ref([]);
 const waterMeters = ref([]);
@@ -112,7 +127,25 @@ const sources = ref([]);
 const loading = ref(false);
 const config = ref(null);
 const showAddSource = ref(false);
+const activeFilter = ref('ALL');
 const headerControls = useHeaderControls();
+
+const filterPills = computed(() => {
+  const all = { label: 'All', value: 'ALL', color: null };
+  const typesPresent = new Set(waterMeters.value.map(m => m[7] || 'WATER'));
+  const pills = [all];
+  for (const t of METER_TYPES) {
+    if (typesPresent.has(t)) {
+      pills.push({ label: meterTypeLabels[t], value: t, color: meterTypeColors[t] });
+    }
+  }
+  return pills;
+});
+
+const filteredWaterMeters = computed(() => {
+  if (activeFilter.value === 'ALL') return waterMeters.value;
+  return waterMeters.value.filter(m => (m[7] || 'WATER') === activeFilter.value);
+});
 let evaluationEventHandler = null;
 
 const host = import.meta.env.VITE_HOST;
@@ -146,7 +179,9 @@ const getData = async () => {
   const sourcesData = (await response.json())["sources"];
   sources.value = sourcesData;
 
-  // Add last_error from sources to watermeters
+  // Add last_error and source_type from sources to watermeters
+  // Backend tuple: [name(0), timestamp(1), rssi(2), result(3), th_digits(4), has_bbox(5), decimals(6), meter_type(7), unit(8)]
+  // After JS merge: [..., last_error(9), source_type(10)]
   waterMeters.value = waterMeters.value.map(meter => {
     const source = sourcesData.find(s => s.name === meter[0]);
     return [...meter, source?.last_error || null, source?.source_type || 'mqtt'];
@@ -212,15 +247,25 @@ watch(loading, (next) => {
   gap: 8px;
   font-weight: 600;
   margin-bottom: 8px;
+  margin-left: 8px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  align-items: center;
 }
 
 .watermeters-row {
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .add-card {
   width: 300px;
-  height: 275px;
+  height: 248px;
   min-height: 180px;
   border: 2px dashed rgba(255, 255, 255, 0.2);
   border-radius: 14px;

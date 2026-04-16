@@ -138,6 +138,8 @@ def prepare_setup_app(config, lifespan):
         digit_models: Optional[List[str]] = None
         decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
+        meter_type: Optional[str] = 'WATER'
+        unit: Optional[str] = None
 
     class CaptureNowRequest(BaseModel):
         cam_entity_id: Optional[str] = None
@@ -165,6 +167,8 @@ def prepare_setup_app(config, lifespan):
         digit_models: Optional[List[str]] = None
         decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
+        meter_type: Optional[str] = 'WATER'
+        unit: Optional[str] = None
 
     class TemplateCreateRequest(BaseModel):
         name: str
@@ -1100,7 +1104,9 @@ def prepare_setup_app(config, lifespan):
                                ORDER BY id DESC
                                LIMIT 1),
                               w.picture_data_bbox IS NOT NULL,
-                              (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1)
+                              (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1),
+                              COALESCE(w.meter_type, 'WATER'),
+                              w.unit
                        FROM watermeters w
                        WHERE w.setup = 1
                        """)
@@ -1110,7 +1116,9 @@ def prepare_setup_app(config, lifespan):
             th_digits = json.loads(row[4]) if row[4] else None
             has_bbox = bool(row[5])
             decimals = row[6] if row[6] is not None else 3
-            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals))
+            meter_type = row[7] if row[7] is not None else 'WATER'
+            unit = row[8]
+            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals, meter_type, unit))
 
         return {"watermeters": result}
 
@@ -1230,7 +1238,9 @@ def prepare_setup_app(config, lifespan):
     @app.get("/api/settings/{name}", dependencies=[Depends(authenticate)])
     @app.get("/api/watermeters/{name}/settings", dependencies=[Depends(authenticate)])
     def get_settings(name: str):
-        cursor = db_connection().cursor()
+        db = db_connection()
+        db.row_factory = sqlite3.Row
+        cursor = db.cursor()
         cursor.execute(
             "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg FROM settings WHERE name = ?",
             (name,))
@@ -1243,6 +1253,11 @@ def prepare_setup_app(config, lifespan):
                 digit_models = json.loads(digit_models)
             except Exception:
                 digit_models = None
+        # Fetch meter_type and unit from watermeters table
+        cursor.execute("SELECT COALESCE(meter_type, 'WATER'), unit FROM watermeters WHERE name = ?", (name,))
+        wm_row = cursor.fetchone()
+        meter_type = wm_row[0] if wm_row else 'WATER'
+        unit = wm_row[1] if wm_row else None
         return {
             "threshold_low": row[0],
             "threshold_high": row[1],
@@ -1260,7 +1275,9 @@ def prepare_setup_app(config, lifespan):
             "segment_mode": row[13],
             "digit_models": digit_models,
             "decimals": row[15],
-            "use_correctional_alg": row[16]
+            "use_correctional_alg": row[16],
+            "meter_type": meter_type,
+            "unit": unit
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
@@ -1297,6 +1314,10 @@ def prepare_setup_app(config, lifespan):
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
              settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
+        )
+        cursor.execute(
+            "UPDATE watermeters SET meter_type = ?, unit = ? WHERE name = ?",
+            (settings.meter_type or 'WATER', settings.unit, settings.name)
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}
@@ -1335,6 +1356,10 @@ def prepare_setup_app(config, lifespan):
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
              settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
+        )
+        cursor.execute(
+            "UPDATE watermeters SET meter_type = ?, unit = ? WHERE name = ?",
+            (settings.meter_type or 'WATER', settings.unit, name)
         )
         db.commit()
         return {"message": "Settings updated", "name": name}

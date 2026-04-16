@@ -11,31 +11,42 @@
             </span>
           </div>
           <div class="header-meta">
-            <span class="timestamp">{{ last_updated_locale }}</span>
-            <n-dropdown :options="menuOptions" @select="handleMenuSelect">
-              <n-button text>
-                <template #icon>
-                  <n-icon><MoreVertFilled /></n-icon>
-                </template>
-              </n-button>
-            </n-dropdown>
+            <n-tooltip trigger="hover" placement="bottom">
+              <template #trigger>
+                <span class="timestamp">{{ last_updated_relative }}</span>
+              </template>
+              {{ last_updated_locale }}
+            </n-tooltip>
           </div>
+        </div>
+      </template>
+
+      <template v-if="!setup" #cover>
+        <div class="card-type-title" :style="{ '--type-color': meterTypeColor }">
+          <span class="type-label">{{ meterTypeLabel }}</span>
+          <n-dropdown :options="menuOptions" @select="handleMenuSelect" placement="bottom-end">
+            <n-button text class="cover-menu-btn">
+              <template #icon>
+                <n-icon size="14"><MoreVertFilled /></n-icon>
+              </template>
+            </n-button>
+          </n-dropdown>
         </div>
       </template>
 
       <SourceCollapse v-if="setup" :source="source"></SourceCollapse>
 
-      <div class="digits-row" v-if="last_digits">
-        <img
-          v-for="[i, base64] in last_digits.entries()"
-          :key="i + 'c'"
-          class="digit theme-revert"
-          :style="`width:calc(160px / ${last_digits.length});`"
-          :src="'data:image/png;base64,' + base64"
-          :alt="meter_name"
-        />
-        <span class="digit" :style="`width:calc(160px / ${last_digits.length});`"></span>
-      </div>
+<!--      <div class="digits-row" v-if="last_digits">-->
+<!--        <img-->
+<!--          v-for="[i, base64] in last_digits.entries()"-->
+<!--          :key="i + 'c'"-->
+<!--          class="digit theme-revert"-->
+<!--          :style="`width:calc(160px / ${last_digits.length});`"-->
+<!--          :src="'data:image/png;base64,' + base64"-->
+<!--          :alt="meter_name"-->
+<!--        />-->
+<!--        <span class="digit" :style="`width:calc(160px / ${last_digits.length});`"></span>-->
+<!--      </div>-->
 
       <div class="result-row" v-if="last_result && last_digits">
         <span
@@ -51,7 +62,7 @@
             {{ digit }}
           </template>
         </span>
-        <span class="unit">m³</span>
+        <span class="unit">{{ meterUnit }}</span>
       </div>
 
       <div v-if="historyData.length > 1" class="sparkline-container">
@@ -90,13 +101,14 @@
 </template>
 
 <script setup>
-import {NCard, NButton, NFlex, NDropdown, NIcon, useDialog} from 'naive-ui';
+import {NCard, NButton, NFlex, NDropdown, NIcon, NTooltip, useDialog} from 'naive-ui';
 import {defineProps, computed, ref, onMounted, watch} from 'vue';
 import { MoreVertFilled, HomeOutlined, PublicFilled, WifiTetheringOutlined, HelpOutlineOutlined } from '@vicons/material';
 import WifiStatus from "@/components/WifiStatus.vue";
 import { useThemeStore } from '@/stores/themeStore';
 import { storeToRefs } from 'pinia';
 import { getSourceColor, getSourceLabel, normalizeSourceType } from '@/utils/sourceMeta';
+import { getMeterUnit, getMeterTypeColor, getMeterTypeLabel } from '@/utils/meterTypeMeta';
 import SourceCollapse from "@/components/SourceCollapse.vue";
 import { apiService } from '@/services/api';
 
@@ -113,7 +125,9 @@ const props = defineProps([
     'last_error',
     'has_bbox',
     'source_type',
-    'decimals'
+    'decimals',
+    'meter_type',
+    'unit'
 ]);
 
 const hasError = computed(() => !!props.last_error);
@@ -221,10 +235,30 @@ const last_updated_locale = computed(() => {
   });
 });
 
+const last_updated_relative = computed(() => {
+  if (!props.last_updated) return '';
+  const date = new Date(props.last_updated);
+  const diffMs = date.getTime() - Date.now();
+  const diffSeconds = Math.round(diffMs / 1000);
+  const rtf = new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' });
+  const absSeconds = Math.abs(diffSeconds);
+  if (absSeconds < 20) return 'just now';
+  if (absSeconds < 60) return rtf.format(diffSeconds, 'second');
+  if (absSeconds < 3600) return rtf.format(Math.round(diffSeconds / 60), 'minute');
+  if (absSeconds < 86400) return rtf.format(Math.round(diffSeconds / 3600), 'hour');
+  if (absSeconds < 604800) return rtf.format(Math.round(diffSeconds / 86400), 'day');
+  if (absSeconds < 2629800) return rtf.format(Math.round(diffSeconds / 604800), 'week');
+  return rtf.format(Math.round(diffSeconds / 2629800), 'month');
+});
+
 const meterDecimals = computed(() => {
   const raw = Number.isFinite(props.decimals) ? props.decimals : 3;
   return Math.max(0, raw);
 });
+
+const meterUnit = computed(() => getMeterUnit(props.meter_type || 'WATER', props.unit));
+const meterTypeColor = computed(() => getMeterTypeColor(props.meter_type || 'WATER'));
+const meterTypeLabel = computed(() => getMeterTypeLabel(props.meter_type || 'WATER'));
 
 const meterScale = computed(() => 10 ** meterDecimals.value);
 
@@ -242,12 +276,12 @@ const isDecimalDigitIndex = (idx, digitLength) => {
 
 const firstValue = computed(() => {
   if (historyData.value.length === 0) return '';
-  return (historyData.value[0][0] / meterScale.value).toFixed(Math.min(meterDecimals.value + 1, 4));
+  return (historyData.value[0][0] / meterScale.value).toFixed(Math.min(meterDecimals.value, 4));
 });
 
 const lastValue = computed(() => {
   if (historyData.value.length === 0) return '';
-  return (historyData.value[historyData.value.length - 1][0] / meterScale.value).toFixed(Math.min(meterDecimals.value + 1, 4));
+  return (historyData.value[historyData.value.length - 1][0] / meterScale.value).toFixed(Math.min(meterDecimals.value, 4));
 });
 
 const chartSeries = computed(() => [{
@@ -285,7 +319,7 @@ const chartOptions = computed(() => ({
       format: 'dd MMM HH:mm'
     },
     y: {
-      formatter: (val) => val.toFixed(Math.min(meterDecimals.value + 1, 4)) + ' m³'
+      formatter: (val) => val.toFixed(Math.min(meterDecimals.value + 1, 4)) + ' ' + meterUnit.value
     }
   },
   xaxis: {
@@ -349,6 +383,7 @@ const chartOptions = computed(() => ({
 .source-pill {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: 4px;
   padding: 1px 6px;
   font-size: 10px;
@@ -458,5 +493,35 @@ const chartOptions = computed(() => ({
 .card-note.warning {
   color: rgb(240, 138, 0);
   border-left: 3px solid rgb(240, 138, 0);
+}
+
+.card-type-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background-color: rgba(125, 125, 125, 0.1);
+  padding: 2px 6px 2px 0;
+  color: var(--type-color);
+}
+
+.type-label {
+  flex: 1;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  padding-left: 24px; /* balance the menu button width */
+}
+
+.cover-menu-btn {
+  opacity: 0.7;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+.cover-menu-btn:hover {
+  opacity: 1;
 }
 </style>

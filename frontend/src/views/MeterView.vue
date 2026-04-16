@@ -34,7 +34,7 @@
           </div>
         </div>
         <div v-else-if="evaluations !== null" style="padding-left: 10px; padding-right: 10px;">
-          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
         </div>
       </n-tab-pane>
     </n-tabs>
@@ -78,7 +78,7 @@
         </div>
       </main>
       <main class="meter-content" v-else-if="evaluations !== null">
-        <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+        <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
       </main>
     </div>
   </template>
@@ -375,8 +375,8 @@ const clearEvaluations = async () => {
 }
 
 .light-mode .meter-sidebar {
-  background: rgba(0, 0, 0, 0.04);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .light-mode .evaluations-skeleton-card {

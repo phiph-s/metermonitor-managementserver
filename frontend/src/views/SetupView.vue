@@ -17,6 +17,8 @@
             :rotated180="rotated180"
             :roi-extractor="roiExtractor"
             :segment-mode="segmentMode"
+            :meter-type="meterType"
+            :unit="unit"
             :capturing="capturing"
             :template-points="templatePoints"
             :digit-quads="templateDigitQuads"
@@ -163,6 +165,8 @@ const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
 const digitModels = computed(() => settings.value?.digit_models || null);
 const decimals = computed(() => Number.isFinite(settings.value?.decimals) ? settings.value.decimals : 3);
+const meterType = computed(() => settings.value?.meter_type || 'WATER');
+const unit = computed(() => settings.value?.unit ?? null);
 const docsBase = 'https://metermonitor-io.github.io/#/';
 const docsLink = (page) => `${docsBase}${page}`;
 
