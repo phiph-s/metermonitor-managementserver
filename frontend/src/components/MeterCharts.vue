@@ -19,9 +19,7 @@
       <div class="chart-panel">
         <div class="chart-range">
           <span class="range-label">Usage</span>
-          <span class="range-value">{{ formatUsage(usageFrom) }}</span>
-          <span class="range-arrow">→</span>
-          <span class="range-value">{{ formatUsage(usageTo) }}</span>
+
           <span class="range-spacer"></span>
           <span class="range-duration">{{ durationLabel }}</span>
           <span class="range-dot">·</span>
@@ -32,7 +30,7 @@
         <apexchart
           v-if="combinedSeries.length > 0"
           width="100%"
-          height="140"
+          height="160"
           type="line"
           :options="combinedChartOptions"
           :series="combinedSeries"
@@ -52,16 +50,15 @@
       <div class="chart-panel">
         <div class="chart-range">
           <span class="range-label">Daily</span>
-          <span class="range-value">{{ formatUsage(dailyFrom) }}</span>
-          <span class="range-arrow">→</span>
-          <span class="range-value">{{ formatUsage(dailyTo) }}</span>
           <span class="range-spacer"></span>
           <span class="range-duration">{{ dailyDurationLabel }}</span>
+          <span class="range-dot">·</span>
+          <span class="range-confidence">avg {{ formatUsage(dailyAvgConsumption) }}</span>
         </div>
         <apexchart
           v-if="dailySeries.length > 0"
           width="100%"
-          height="140"
+          height="160"
           type="area"
           :options="dailyChartOptions"
           :series="dailySeries"
@@ -147,28 +144,43 @@ const medianConfidence = computed(() => {
   return `${(s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2).toFixed(1)}%`;
 });
 
-const formatShortDate = (v) => {
+const detailedRangeMs = computed(() => {
+  if (sortedHistory.value.length < 2) return 0;
+  return new Date(sortedHistory.value.at(-1)[1]) - new Date(sortedHistory.value[0][1]);
+});
+
+const formatDetailedLabel = (v) => {
   if (!v) return '—';
-  return new Date(v).toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+  const date = new Date(v);
+  const useTime = detailedRangeMs.value <= 2 * 86400 * 1000;
+  if (useTime) {
+    const day = date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+    const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    // Only show date prefix on left/right if range spans multiple days
+    return detailedRangeMs.value > 86400 * 1000 ? `${day} ${time}` : time;
+  }
+  return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
 };
-const detailedLeft  = computed(() => formatShortDate(sortedHistory.value[0]?.[1]));
-const detailedRight = computed(() => formatShortDate(sortedHistory.value.at(-1)?.[1]));
-const detailedMid   = computed(() => formatShortDate(sortedHistory.value[Math.floor(sortedHistory.value.length / 2)]?.[1]));
+
+const detailedLeft  = computed(() => formatDetailedLabel(sortedHistory.value[0]?.[1]));
+const detailedRight = computed(() => formatDetailedLabel(sortedHistory.value.at(-1)?.[1]));
+const detailedMid   = computed(() => formatDetailedLabel(sortedHistory.value[Math.floor(sortedHistory.value.length / 2)]?.[1]));
 
 const usageColor      = computed(() => isDark.value ? '#22d3ee' : '#0ea5e9');
 const confidenceColor = computed(() => isDark.value ? '#f59e0b' : '#d97706');
 
 const combinedChartOptions = computed(() => ({
   theme: { mode: isDark.value ? 'dark' : 'light' },
-  chart: { type: 'line', zoom: { enabled: false }, background: '#00000000', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 600 }, sparkline: { enabled: true } },
+  chart: { type: 'line', zoom: { enabled: false }, background: '#00000000', toolbar: { show: false }, animations: { enabled: false }, sparkline: { enabled: true } },
   yaxis: [
-    { min: usageMin.value, max: usageMax.value, labels: { formatter: () => '' } },
-    { opposite: true, min: 0, max: 100, labels: { formatter: v => `${Math.round(v)}%` } },
+    { min: usageMin.value, max: usageMax.value, labels: { show: false } },
+    { opposite: true, show: false, min: 0, max: 100 },
   ],
+  grid: { show: false, padding: { left: 0, right: 0, top: 4, bottom: 0 } },
   plotOptions: { bar: { columnWidth: '75%', borderRadius: 4 } },
   stroke: { curve: 'smooth', width: [2.5, 0] },
   fill: { type: ['gradient', 'solid'], opacity: [0.18, 0.55], gradient: { shadeIntensity: 0.5, opacityFrom: 0.2, opacityTo: 0.02, stops: [0, 70, 100] } },
-  tooltip: { x: { show: false }, y: [{ formatter: v => `${v.toFixed(3)} ${props.unit}` }, { formatter: v => `${v.toFixed(1)}%` }], marker: { show: false } },
+  tooltip: { x: { format: 'dd MMM HH:mm' }, y: [{ formatter: v => `${v.toFixed(3)} ${props.unit}` }, { formatter: v => `${v.toFixed(1)}%` }], marker: { show: false } },
   colors: [usageColor.value, confidenceColor.value],
   markers: { size: 0, strokeWidth: 0 },
   dataLabels: { enabled: false },
@@ -192,6 +204,17 @@ const dailyMax = computed(() => dailySeries.value.length ? Math.max(...dailySeri
 const dailyFrom = computed(() => dailySeries.value[0]?.data[0]?.y ?? '—');
 const dailyTo   = computed(() => { const d = dailySeries.value[0]?.data; return d?.[d.length - 1]?.y ?? '—'; });
 
+const dailyAvgConsumption = computed(() => {
+  if (sortedDaily.value.length < 2) return null;
+  const deltas = [];
+  for (let i = 1; i < sortedDaily.value.length; i++) {
+    const diff = sortedDaily.value[i][0] - sortedDaily.value[i - 1][0];
+    if (diff >= 0) deltas.push(diff);
+  }
+  if (!deltas.length) return null;
+  return (deltas.reduce((a, b) => a + b, 0) / deltas.length) / 1000;
+});
+
 const dailyDurationLabel = computed(() => {
   if (sortedDaily.value.length < 2) return '—';
   const days = Math.round((new Date(sortedDaily.value.at(-1)[1]) - new Date(sortedDaily.value[0][1])) / 86400000);
@@ -206,7 +229,7 @@ const dailyColor = computed(() => isDark.value ? '#a78bfa' : '#7c3aed');
 
 const dailyChartOptions = computed(() => ({
   theme: { mode: isDark.value ? 'dark' : 'light' },
-  chart: { type: 'area', zoom: { enabled: false }, background: '#00000000', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 600 }, sparkline: { enabled: true } },
+  chart: { type: 'area', zoom: { enabled: false }, background: '#00000000', toolbar: { show: false }, animations: { enabled: false }, sparkline: { enabled: true } },
   yaxis: { min: dailyMin.value, max: dailyMax.value, labels: { formatter: () => '' } },
   stroke: { curve: 'smooth', width: 2 },
   fill: { type: 'gradient', gradient: { shadeIntensity: 0.5, opacityFrom: 0.25, opacityTo: 0.02, stops: [0, 80, 100] } },
@@ -281,24 +304,27 @@ const formatUsage = (value) => {
 .chart-range {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 4px;
   padding: 6px 10px 0 10px;
   font-size: 11px;
   font-weight: 600;
   opacity: 0.75;
+  overflow: hidden;
 }
 
 .range-label {
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  white-space: nowrap;
 }
 
-.range-value { font-variant-numeric: tabular-nums; }
-.range-arrow { opacity: 0.6; }
-.range-spacer { flex: 1; }
-.range-duration { font-variant-numeric: tabular-nums; opacity: 0.7; }
-.range-dot { opacity: 0.5; }
-.range-confidence { font-variant-numeric: tabular-nums; opacity: 0.7; }
+.range-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.range-arrow { opacity: 0.6; flex-shrink: 0; }
+.range-spacer { flex: 1; min-width: 4px; }
+.range-duration { font-variant-numeric: tabular-nums; opacity: 0.7; white-space: nowrap; }
+.range-dot { opacity: 0.5; flex-shrink: 0; }
+.range-confidence { font-variant-numeric: tabular-nums; opacity: 0.7; white-space: nowrap; }
 
 .chart-empty {
   text-align: center;

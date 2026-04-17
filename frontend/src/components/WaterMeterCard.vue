@@ -48,10 +48,10 @@
 <!--        <span class="digit" :style="`width:calc(160px / ${last_digits.length});`"></span>-->
 <!--      </div>-->
 
-      <div class="result-row" v-if="last_result && last_digits">
-        <div class="stat-chip" style="width:100%;">
+      <div class="result-row" v-if="last_result != null">
+        <div class="stat-chip stat-chip--current">
           <div class="stat-label">Current reading</div>
-          <div class="stat-value big">{{ last_result.toString().slice(0, meterDecimals - 1) }}.{{ last_result.toString().slice(meterDecimals - 1) }} {{ meterUnit }}</div>
+          <div class="stat-value big">{{ formatConsumption(last_result) }}</div>
         </div>
       </div>
 
@@ -359,10 +359,11 @@ const formatConsumption = (rawValue) => {
 
 .result-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-evenly;
   margin: 4px 0 0 0;
-  gap: 4px;
+}
+
+.stat-chip--current {
+  width: 100%;
 }
 
 .prediction {

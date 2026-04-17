@@ -12,22 +12,8 @@
           </div>
           <div v-if="evaluation.total_confidence" class="conf-display">
             <div style="font-size: 12px; opacity: 0.7;">Confidence</div>
-            <div :style="{ color: getColor(evaluation.used_confidence), fontSize: '24px', fontWeight: 'bold' }">
-              <n-tooltip trigger="hover" v-if="evaluation.used_confidence !== -1.0">
-                <template #trigger>
-                  <span style="cursor: help;">{{ (evaluation.used_confidence * 100).toFixed(1) }}%</span>
-                </template>
-                Used confidence: Only digits accepted by the correction algorithm
-              </n-tooltip>
-              <span style="margin: 0 8px; opacity: 0.5;">/</span>
-              <n-tooltip trigger="hover">
-                <template #trigger>
-                  <span :style="{ color: getColor(evaluation.total_confidence), fontSize: '16px', cursor: 'help' }">
-                    {{ (evaluation.total_confidence * 100).toFixed(1) }}%
-                  </span>
-                </template>
-                Total confidence: All recognized digits
-              </n-tooltip>
+            <div :style="{ color: getColor(evaluation.total_confidence), fontSize: '24px', fontWeight: 'bold' }">
+              {{ (evaluation.total_confidence * 100).toFixed(1) }}%
             </div>
           </div>
           <div v-else class="rejected-badge">

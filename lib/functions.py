@@ -248,6 +248,25 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             used_confidence = correction.get("used_confidence", 0.0)
             if correction.get("accepted"):
                 value = correction.get("value")
+
+                # Snapshot previous entry into daily_history if it's from a prior day
+                today = timestamp[:10] if timestamp else None
+                if today:
+                    cursor.execute('''
+                        SELECT value, timestamp FROM history
+                        WHERE name = ?
+                        ORDER BY ROWID DESC LIMIT 1
+                    ''', (name,))
+                    prev = cursor.fetchone()
+                    if prev:
+                        prev_value, prev_ts = prev
+                        prev_date = prev_ts[:10] if prev_ts else None
+                        if prev_date and prev_date < today:
+                            cursor.execute('''
+                                INSERT OR IGNORE INTO daily_history (name, value, date)
+                                VALUES (?, ?, ?)
+                            ''', (name, prev_value, prev_date))
+
                 cursor.execute('''
                     INSERT INTO history (name, value, confidence, used_confidence, target_brightness, timestamp, manual)
                     VALUES (?,?,?,?,?,?,?)
