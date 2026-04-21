@@ -303,7 +303,9 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
                 ''', (name, name, config['max_history']))
 
                 if publish and mqtt_client:
+                    conn.commit()
                     publish_value(mqtt_client, config, name, value, decimals=decimals)
+                    publish_stats(db_file, mqtt_client, config, name, decimals=decimals)
 
         curser = cursor.execute('''
             SELECT COUNT(*) FROM evaluations  
@@ -428,38 +430,124 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         log(f"[Eval ({name})] Prediction saved")
         return target_brightness, confidence, boundingboxed_image
 
+# HA device-class / default-unit / display label / unique_id prefix per meter type
+_HA_METER_META = {
+    'WATER':       ('water',  'm³',  'Water usage',       'watermeter'),
+    'GAS':         ('gas',    'm³',  'Gas usage',         'gasmeter'),
+    'ELECTRICITY': ('energy', 'kWh', 'Electricity usage', 'electricitymeter'),
+}
+
+def _ha_meta(meter_type, unit):
+    """Return (device_class_or_None, resolved_unit, display_label, id_prefix) for HA discovery."""
+    if meter_type in _HA_METER_META:
+        dc, default_unit, label, id_prefix = _HA_METER_META[meter_type]
+        return dc, unit or default_unit, label, id_prefix
+    return None, unit or '', 'Usage', 'custommeter'
+
+
 # Function to publish the value to the MQTT broker, compatible with Home Assistant
-def publish_value(mqtt_client, config, name, value, decimals=3):
-    # publish to topic
+def publish_value(mqtt_client, config, name, value, decimals=3, unit=None):
     topic = config["publish_to"].replace("{device}", name) + "value"
     scale = 10 ** int(decimals or 0)
-    dict = {
-        "value": int(value) / float(scale),
-    }
-    mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
-    log(f"[Eval/MQTT ({name})] Value published ({value} m³)")
+    mqtt_client.publish(topic, json.dumps({"value": int(value) / float(scale)}), qos=1, retain=True)
+    log(f"[Eval/MQTT ({name})] Value published ({int(value) / float(scale)} {unit or ''})")
 
-# Function to publish the registration to the MQTT broker, compatible with Home Assistant
-def publish_registration(mqtt_client, config, name, type):
-    # publish to topic
-    topic = config["publish_to"].replace("{device}", name) + "config"
-    dict = {
-      "name": "Water usage",
-      "state_topic": config["publish_to"].replace("{device}", name) + type,
-      "unit_of_measurement": "m³",
-      "device_class": "water",
-      "unique_id": "watermeter_" + name,
-      "value_template": "{{ value_json.value }}",
-      "device": {
-        "identifiers": ["watermeter_" + name],
+
+# Function to publish the registration to the MQTT broker, compatible with Home Assistant.
+# Registers the main reading sensor plus today/daily-avg/yearly-est consumption sensors.
+def publish_registration(mqtt_client, config, name, _type='value', meter_type='WATER', unit=None):
+    base = config["publish_to"].replace("{device}", name)
+    device_class, ha_unit, label, id_prefix = _ha_meta(meter_type, unit)
+
+    device_info = {
+        "identifiers": [f"{id_prefix}_{name}"],
         "name": name,
         "manufacturer": "DIY",
         "model": "WM-1",
-        "sw_version": "1.0"
-      }
+        "sw_version": "1.0",
     }
-    mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
-    log(f"[Eval/MQTT ({name})] HA compatible Registration published")
+
+    def _sensor(suffix, sensor_name, state_topic_suffix, state_class):
+        p = {
+            "name": sensor_name,
+            "state_topic": base + state_topic_suffix,
+            "unit_of_measurement": ha_unit,
+            "unique_id": f"{id_prefix}_{name}{suffix}",
+            "value_template": "{{ value_json.value }}",
+            "state_class": state_class,
+            "device": device_info,
+        }
+        if device_class:
+            p["device_class"] = device_class
+        return p
+
+    # Main reading (total_increasing — monotonically rising meter counter)
+    disc_base = config["publish_to"]
+    mqtt_client.publish(
+        disc_base.replace("{device}", name) + "config",
+        json.dumps(_sensor("", label, "value", "total_increasing")),
+        qos=1, retain=True,
+    )
+    # Today's consumption
+    mqtt_client.publish(
+        disc_base.replace("{device}", name + "_today") + "config",
+        json.dumps(_sensor("_today", f"{label} today", "today", "measurement")),
+        qos=1, retain=True,
+    )
+    # Daily average
+    mqtt_client.publish(
+        disc_base.replace("{device}", name + "_daily_avg") + "config",
+        json.dumps(_sensor("_daily_avg", f"{label} daily avg", "daily_avg", "measurement")),
+        qos=1, retain=True,
+    )
+    # Yearly estimate
+    mqtt_client.publish(
+        disc_base.replace("{device}", name + "_yearly_est") + "config",
+        json.dumps(_sensor("_yearly_est", f"{label} yearly est", "yearly_est", "measurement")),
+        qos=1, retain=True,
+    )
+    log(f"[Eval/MQTT ({name})] HA sensor registrations published ({label}, {ha_unit})")
+
+
+# Function to compute and publish today/daily-avg/yearly-est stats to MQTT
+def publish_stats(db_file, mqtt_client, config, name, decimals=3):
+    scale = 10 ** int(decimals or 0)
+    base = config["publish_to"].replace("{device}", name)
+
+    with sqlite3.connect(db_file, timeout=30) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
+        row = cursor.fetchone()
+        current_value = row[0] if row else None
+
+        cursor.execute("SELECT value FROM daily_history WHERE name = ? ORDER BY date DESC LIMIT 1", (name,))
+        row = cursor.fetchone()
+        last_daily_value = row[0] if row else None
+
+        cursor.execute("SELECT value FROM daily_history WHERE name = ? ORDER BY date ASC", (name,))
+        rows = cursor.fetchall()
+
+    today = None
+    if current_value is not None and last_daily_value is not None:
+        today = max(0, current_value - last_daily_value)
+
+    daily_avg = yearly_est = None
+    if len(rows) >= 2:
+        values = [r[0] for r in rows]
+        deltas = [max(0, values[i + 1] - values[i]) for i in range(len(values) - 1)]
+        daily_avg = sum(deltas) / len(deltas)
+        yearly_est = daily_avg * 365
+
+    def fmt(v):
+        return round(v / scale, max(0, int(decimals or 0))) if v is not None else None
+
+    if today is not None:
+        mqtt_client.publish(base + "today", json.dumps({"value": fmt(today)}), qos=1, retain=True)
+    if daily_avg is not None:
+        mqtt_client.publish(base + "daily_avg", json.dumps({"value": fmt(daily_avg)}), qos=1, retain=True)
+    if yearly_est is not None:
+        mqtt_client.publish(base + "yearly_est", json.dumps({"value": fmt(yearly_est)}), qos=1, retain=True)
+    log(f"[Eval/MQTT ({name})] Consumption stats published")
 
 # Function to add a history entry to the database, removing old entries
 def add_history_entry(db_file: str, name: str, value: int, confidence:int, target_brightness: float, timestamp: str, config, manual: bool = False):

@@ -1870,7 +1870,9 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
                 headers={"Authorization": f"Bearer {sup_token}"}
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
+                body = json.loads(resp.read().decode())
+            # Supervisor wraps the payload under a "data" key
+            data = body.get("data", body)
             return {
                 "mqtt_broker": data.get("host"),
                 "mqtt_port": data.get("port"),

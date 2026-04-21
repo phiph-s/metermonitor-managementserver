@@ -56,10 +56,14 @@ class MQTTHandler:
         # send registration message for all watermeters
         with sqlite3.connect(self.db_file, timeout=30) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT name FROM watermeters")
+            cursor.execute(
+                "SELECT w.name, COALESCE(s.meter_type, 'WATER'), s.unit "
+                "FROM watermeters w LEFT JOIN settings s ON w.name = s.name"
+            )
             rows = cursor.fetchall()
             for row in rows:
-                publish_registration(self.client, self.config, row[0], "value")
+                publish_registration(self.client, self.config, row[0], "value",
+                                     meter_type=row[1] or 'WATER', unit=row[2])
 
     def _on_disconnect(self, client, userdata, rc, properties=None, packet=None, reason=None):
         log(f"Disconnected with code {rc}")
@@ -259,7 +263,8 @@ class MQTTHandler:
                         True
                     ))
 
-                    publish_registration(self.client, self.config, data['name'], "value")
+                    publish_registration(self.client, self.config, data['name'], "value",
+                                         meter_type='WATER', unit=None)
                 else:
                     next_picture_number = int(row[0] or 0) + 1
                     cursor.execute('''
