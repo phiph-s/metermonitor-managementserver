@@ -57,8 +57,7 @@ class MQTTHandler:
         with sqlite3.connect(self.db_file, timeout=30) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT w.name, COALESCE(s.meter_type, 'WATER'), s.unit "
-                "FROM watermeters w LEFT JOIN settings s ON w.name = s.name"
+                "SELECT name, COALESCE(meter_type, 'WATER'), unit FROM watermeters"
             )
             rows = cursor.fetchall()
             for row in rows:
