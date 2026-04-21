@@ -13,13 +13,13 @@
               />
               <div class="nav-divider"></div>
               <router-link to="/" class="nav-item" :class="{ active: isOverviewActive }">
-                <n-icon size="15"><HomeOutlined /></n-icon>Overview
+                <n-icon size="15"><HomeOutlined /></n-icon><span v-if="!isMobile">Overview</span>
               </router-link>
               <router-link to="/settings" class="nav-item" :class="{ active: route.path === '/settings' }">
-                <n-icon size="15"><SettingsOutlined /></n-icon>Settings
+                <n-icon size="15"><SettingsOutlined /></n-icon><span v-if="!isMobile">Settings</span>
               </router-link>
               <router-link v-if="currentMeter" :to="(isSetup ? '/setup/' : '/meter/') + currentMeter" class="nav-item active nav-item--meter">
-                <n-icon size="15"><BuildOutlined v-if="isSetup" /><SpeedOutlined v-else /></n-icon>{{ currentMeter }}
+                <n-icon size="15"><BuildOutlined v-if="isSetup" /><SpeedOutlined v-else /></n-icon><span v-if="!isMobile">{{ currentMeter }}</span>
               </router-link>
             </div>
             <div class="header-right">
@@ -143,6 +143,10 @@ const cycleTheme = () => {
 const isOverviewActive = computed(() => route.path === '/' || route.path === '/list');
 const currentMeter = computed(() => (route.name === 'Meter' || route.name === 'Setup') ? route.params.id : null);
 const isSetup = computed(() => route.name === 'Setup');
+const isMobile = ref(window.innerWidth < 600);
+const updateMobile = () => { isMobile.value = window.innerWidth < 600; };
+onMounted(() => window.addEventListener('resize', updateMobile));
+onUnmounted(() => window.removeEventListener('resize', updateMobile));
 
 const alerts = ref({});
 const alertKeys = computed(() => Object.keys(alerts.value));
@@ -355,6 +359,15 @@ onUnmounted(() => {
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (max-width: 600px) {
+  .nav-item {
+    padding: 0 8px;
+  }
+  .header-logo {
+    max-width: 70px;
+  }
 }
 
 .header-right {

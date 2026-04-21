@@ -15,6 +15,10 @@
             :last-3-digits-narrow="last3DigitsNarrow"
             :segments="segments"
             :rotated180="rotated180"
+            :flip-horizontal="flipHorizontal"
+            :brightness-adjust="brightnessAdjust"
+            :contrast-adjust="contrastAdjust"
+            :saturation-adjust="saturationAdjust"
             :roi-extractor="roiExtractor"
             :segment-mode="segmentMode"
             :meter-type="meterType"
@@ -155,6 +159,10 @@ const segments = computed(() => settings.value?.segments || 0);
 const extendedLastDigit = computed(() => settings.value?.extended_last_digit || false);
 const last3DigitsNarrow = computed(() => settings.value?.shrink_last_3 || false);
 const rotated180 = computed(() => settings.value?.rotated_180 || false);
+const flipHorizontal = computed(() => settings.value?.flip_horizontal || false);
+const brightnessAdjust = computed(() => settings.value?.brightness_adjust ?? 0);
+const contrastAdjust = computed(() => settings.value?.contrast_adjust ?? 0);
+const saturationAdjust = computed(() => settings.value?.saturation_adjust ?? 0);
 const roiExtractor = computed(() => settings.value?.roi_extractor || 'yolo');
 const segmentMode = computed(() => settings.value?.segment_mode || 'display');
 const templateId = computed(() => settings.value?.template_id || null);

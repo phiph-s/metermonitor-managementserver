@@ -541,3 +541,19 @@ def run_migrations(db_file, initial_config=None):
                 int(max_evals),
             ))
             log("[MIGRATION] Created global_settings table and seeded from config")
+
+        # add post-processing fields to settings table
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'flip_horizontal' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN flip_horizontal BOOLEAN DEFAULT 0")
+            log("[MIGRATION] Added 'flip_horizontal' column to 'settings' table")
+        if 'brightness_adjust' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN brightness_adjust INTEGER DEFAULT 0")
+            log("[MIGRATION] Added 'brightness_adjust' column to 'settings' table")
+        if 'contrast_adjust' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN contrast_adjust INTEGER DEFAULT 0")
+            log("[MIGRATION] Added 'contrast_adjust' column to 'settings' table")
+        if 'saturation_adjust' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN saturation_adjust INTEGER DEFAULT 0")
+            log("[MIGRATION] Added 'saturation_adjust' column to 'settings' table")

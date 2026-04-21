@@ -180,7 +180,7 @@
       {{ reevaluateError }}
     </n-alert>
 
-    <n-flex align="center" :size="8">
+    <n-flex align="center" :size="8" class="padd">
       <n-switch
         :value="rotated180"
         @update:value="handleUpdate('rotated180', $event)"
@@ -192,13 +192,46 @@
       </n-switch>
       <n-tooltip>
         <template #trigger>
-          <span class="tooltip-trigger">
-            <span>180° rotated</span>
-          </span>
+          <span class="tooltip-trigger"><span>180° rotated</span></span>
         </template>
         <span>Enable if the captured image is rotated 180°</span>
       </n-tooltip>
     </n-flex>
+    <n-flex align="center" :size="8" class="padd">
+      <n-switch
+        :value="flipHorizontal"
+        @update:value="handleUpdate('flipHorizontal', $event)"
+        :disabled="loading"
+      >
+        <template #icon>
+          <n-icon size="16"><FlipOutlined /></n-icon>
+        </template>
+      </n-switch>
+      <n-tooltip>
+        <template #trigger>
+          <span class="tooltip-trigger"><span>Flip horizontal</span></span>
+        </template>
+        <span>Mirror the display left-right. In display mode the whole display region is flipped (digit order is reversed); in each-digit mode individual digit crops are mirrored.</span>
+      </n-tooltip>
+    </n-flex>
+
+    <div class="filter-sliders">
+      <div class="filter-row">
+        <span class="filter-label">Brightness</span>
+        <n-slider :value="brightnessAdjust" :min="-100" :max="100" :step="1" :disabled="loading" @update:value="handleUpdate('brightnessAdjust', $event)" style="flex:1;" />
+        <span class="filter-val">{{ brightnessAdjust > 0 ? '+' : '' }}{{ brightnessAdjust }}</span>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Contrast</span>
+        <n-slider :value="contrastAdjust" :min="-100" :max="100" :step="1" :disabled="loading" @update:value="handleUpdate('contrastAdjust', $event)" style="flex:1;" />
+        <span class="filter-val">{{ contrastAdjust > 0 ? '+' : '' }}{{ contrastAdjust }}</span>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Saturation</span>
+        <n-slider :value="saturationAdjust" :min="-100" :max="100" :step="1" :disabled="loading" @update:value="handleUpdate('saturationAdjust', $event)" style="flex:1;" />
+        <span class="filter-val">{{ saturationAdjust > 0 ? '+' : '' }}{{ saturationAdjust }}</span>
+      </div>
+    </div>
     <template #action v-if="evaluation">
       <n-flex justify="space-around" :size="[0,0]" v-if="evaluation['colored_digits']">
         <div v-for="[index, base64] in evaluation['colored_digits'].entries()" :key="base64" style="text-align: center;">
@@ -223,14 +256,15 @@
 </template>
 
 <script setup>
-import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon, NSelect, NInput} from 'naive-ui';
+import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon, NSelect, NInput, NSlider} from 'naive-ui';
 import {defineProps, defineEmits, computed, h} from 'vue';
 import {
   AddCircleOutlineOutlined,
   CameraAltOutlined,
   CompressOutlined,
   RotateRightOutlined,
-  GridViewOutlined
+  GridViewOutlined,
+  FlipOutlined,
 } from '@vicons/material';
 import { meterTypeColors, meterTypeLabels, METER_TYPES } from '@/utils/meterTypeMeta';
 import TemplatePointEditor from '@/components/TemplatePointEditor.vue';
@@ -245,6 +279,10 @@ const props = defineProps([
     'last3DigitsNarrow',
     'evaluation',
     'rotated180',
+    'flipHorizontal',
+    'brightnessAdjust',
+    'contrastAdjust',
+    'saturationAdjust',
     'roiExtractor',
     'segmentMode',
     'templatePoints',
@@ -300,6 +338,10 @@ const handleUpdate = (field, value) => {
     extendedLastDigit: field === 'extendedLastDigit' ? value : props.extendedLastDigit,
     last3DigitsNarrow: field === 'last3DigitsNarrow' ? value : props.last3DigitsNarrow,
     rotated180: field === 'rotated180' ? value : props.rotated180,
+    flipHorizontal: field === 'flipHorizontal' ? value : props.flipHorizontal,
+    brightnessAdjust: field === 'brightnessAdjust' ? value : (props.brightnessAdjust ?? 0),
+    contrastAdjust: field === 'contrastAdjust' ? value : (props.contrastAdjust ?? 0),
+    saturationAdjust: field === 'saturationAdjust' ? value : (props.saturationAdjust ?? 0),
     roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor,
     segmentMode: field === 'segmentMode' ? value : props.segmentMode,
     meterType: field === 'meterType' ? value : props.meterType,
@@ -364,6 +406,35 @@ const handleUpdate = (field, value) => {
 
 .padd {
   margin-bottom: 10px;
+}
+
+.filter-sliders {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-label {
+  width: 72px;
+  font-size: 13px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.filter-val {
+  width: 32px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .digit-handle {

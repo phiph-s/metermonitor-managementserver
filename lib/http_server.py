@@ -140,6 +140,10 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
         use_correctional_alg: Optional[bool] = True
         meter_type: Optional[str] = 'WATER'
         unit: Optional[str] = None
+        flip_horizontal: Optional[bool] = False
+        brightness_adjust: Optional[int] = 0
+        contrast_adjust: Optional[int] = 0
+        saturation_adjust: Optional[int] = 0
 
     class CaptureNowRequest(BaseModel):
         cam_entity_id: Optional[str] = None
@@ -169,6 +173,10 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
         use_correctional_alg: Optional[bool] = True
         meter_type: Optional[str] = 'WATER'
         unit: Optional[str] = None
+        flip_horizontal: Optional[bool] = False
+        brightness_adjust: Optional[int] = 0
+        contrast_adjust: Optional[int] = 0
+        saturation_adjust: Optional[int] = 0
 
     class TemplateCreateRequest(BaseModel):
         name: str
@@ -1310,7 +1318,7 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
         db.row_factory = sqlite3.Row
         cursor = db.cursor()
         cursor.execute(
-            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg FROM settings WHERE name = ?",
+            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg, flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust FROM settings WHERE name = ?",
             (name,))
         row = cursor.fetchone()
         if not row:
@@ -1345,7 +1353,11 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
             "decimals": row[15],
             "use_correctional_alg": row[16],
             "meter_type": meter_type,
-            "unit": unit
+            "unit": unit,
+            "flip_horizontal": bool(row[17]) if row[17] is not None else False,
+            "brightness_adjust": int(row[18]) if row[18] is not None else 0,
+            "contrast_adjust": int(row[19]) if row[19] is not None else 0,
+            "saturation_adjust": int(row[20]) if row[20] is not None else 0,
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
@@ -1358,8 +1370,9 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg,
+                                  flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1376,12 +1389,17 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
                                             segment_mode=excluded.segment_mode,
                                             digit_models=excluded.digit_models,
                                             decimals=excluded.decimals,
-                                            use_correctional_alg=excluded.use_correctional_alg
+                                            use_correctional_alg=excluded.use_correctional_alg,
+                                            flip_horizontal=excluded.flip_horizontal,
+                                            brightness_adjust=excluded.brightness_adjust,
+                                            contrast_adjust=excluded.contrast_adjust,
+                                            saturation_adjust=excluded.saturation_adjust
             """,
             (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg,
+             1 if settings.flip_horizontal else 0, settings.brightness_adjust or 0, settings.contrast_adjust or 0, settings.saturation_adjust or 0)
         )
         cursor.execute(
             "UPDATE watermeters SET meter_type = ?, unit = ? WHERE name = ?",
@@ -1400,8 +1418,9 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg,
+                                  flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1418,12 +1437,17 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
                                             segment_mode=excluded.segment_mode,
                                             digit_models=excluded.digit_models,
                                             decimals=excluded.decimals,
-                                            use_correctional_alg=excluded.use_correctional_alg
+                                            use_correctional_alg=excluded.use_correctional_alg,
+                                            flip_horizontal=excluded.flip_horizontal,
+                                            brightness_adjust=excluded.brightness_adjust,
+                                            contrast_adjust=excluded.contrast_adjust,
+                                            saturation_adjust=excluded.saturation_adjust
             """,
             (name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg,
+             1 if settings.flip_horizontal else 0, settings.brightness_adjust or 0, settings.contrast_adjust or 0, settings.saturation_adjust or 0)
         )
         cursor.execute(
             "UPDATE watermeters SET meter_type = ?, unit = ? WHERE name = ?",

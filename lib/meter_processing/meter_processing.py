@@ -68,7 +68,7 @@ class MeterPredictor:
         log(f"[MeterPredictor] YOLO input: {self.yolo_input_name}")
         log(f"[MeterPredictor] Digit classifier input: {self.digit_input_name}")
 
-    def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None, segment_mode="display"):
+    def extract_display_and_segment(self, input_image, segments=7, rotated_180=False, extended_last_digit=False, shrink_last_3=False, target_brightness=None, roi_extractor="yolo", extractor_instance=None, segment_mode="display", flip_horizontal=False, brightness_adjust=0, contrast_adjust=0, saturation_adjust=0):
         """
         Predicts the water meter reading on a single image:
           - Runs YOLO detection for oriented bounding box (OBB)
@@ -114,6 +114,13 @@ class MeterPredictor:
             digits = [cv2.rotate(digit, cv2.ROTATE_180) for digit in digits]
             digits = list(reversed(digits))
 
+        # Horizontal flip: for display mode flip each digit + reverse order (= flipping the whole strip);
+        # for each_digit mode flip individual digits only (order already correct from user-defined quads).
+        if flip_horizontal:
+            digits = [cv2.flip(d, 1) for d in digits]
+            if segment_mode != 'each_digit':
+                digits = list(reversed(digits))
+
         # Adjust brightness of each image
         mean_brightnesses = [np.mean(img) for img in digits]
         adjusted_images = []
@@ -125,6 +132,22 @@ class MeterPredictor:
             adjusted_images.append(adjusted_img)
 
         digits = adjusted_images
+
+        # Apply user-defined post-processing filters to individual digit crops
+        if brightness_adjust or contrast_adjust or saturation_adjust:
+            processed = []
+            for img in digits:
+                if contrast_adjust:
+                    factor = 1.0 + contrast_adjust / 100.0
+                    img = np.clip(img.astype(np.float32) * factor, 0, 255).astype(np.uint8)
+                if brightness_adjust:
+                    img = np.clip(img.astype(np.int32) + int(brightness_adjust * 2.55), 0, 255).astype(np.uint8)
+                if saturation_adjust and len(img.shape) == 3:
+                    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
+                    hsv[:, :, 1] = np.clip(hsv[:, :, 1] * (1.0 + saturation_adjust / 100.0), 0, 255)
+                    img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+                processed.append(img)
+            digits = processed
 
         # Convert to base64 for temporary storage
         base64s = []

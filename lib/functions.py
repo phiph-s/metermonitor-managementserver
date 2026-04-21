@@ -139,7 +139,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         # Get current settings for the watermeter
         cursor.execute('''
                    SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
-                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg
+                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg,
+                    flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust
                    FROM settings
                    WHERE name = ?
                ''', (name,))
@@ -159,6 +160,10 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         digit_models = settings[14] if len(settings) > 14 else None
         decimals = settings[15] if len(settings) > 15 and settings[15] is not None else 3
         use_correctional_alg = bool(settings[16]) if settings[16] is not None else True
+        flip_horizontal = bool(settings[17]) if len(settings) > 17 and settings[17] is not None else False
+        brightness_adjust = int(settings[18]) if len(settings) > 18 and settings[18] is not None else 0
+        contrast_adjust = int(settings[19]) if len(settings) > 19 and settings[19] is not None else 0
+        saturation_adjust = int(settings[20]) if len(settings) > 20 and settings[20] is not None else 0
 
         # Get the target_brightness from the last history entry
         cursor.execute("SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
@@ -196,7 +201,11 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             target_brightness=target_brightness,
             roi_extractor=roi_extractor,
             extractor_instance=extractor_instance,
-            segment_mode=segment_mode
+            segment_mode=segment_mode,
+            flip_horizontal=flip_horizontal,
+            brightness_adjust=brightness_adjust,
+            contrast_adjust=contrast_adjust,
+            saturation_adjust=saturation_adjust
         )
 
         if not result or len(result) == 0:
