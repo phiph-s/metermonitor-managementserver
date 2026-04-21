@@ -29,7 +29,7 @@ from datetime import datetime
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, FileResponse, StreamingResponse
 
-from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits
+from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits, publish_registration
 from lib.ha_flash_suggestion import suggest_flash_entity
 from lib.model_singleton import get_meter_predictor
 from lib.global_alerts import get_alerts, add_alert, remove_alert, set_change_callback
@@ -44,7 +44,7 @@ from lib.realtime_events import evaluation_event_hub
 # http server class
 # FastAPOI automatically creates a documentation for the API on the path /docs
 
-def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
+def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn=None):
     app = FastAPI(lifespan=lifespan)
     SECRET_KEY = config['secret_key']
     db_connection = lambda: sqlite3.connect(config['dbfile'])
@@ -1454,6 +1454,12 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None):
             (settings.meter_type or 'WATER', settings.unit, name)
         )
         db.commit()
+        if get_mqtt_client_fn:
+            mqtt_client = get_mqtt_client_fn()
+            if mqtt_client:
+                publish_registration(mqtt_client, config, name, 'value',
+                                     meter_type=settings.meter_type or 'WATER',
+                                     unit=settings.unit)
         return {"message": "Settings updated", "name": name}
 
     @app.post("/api/watermeters/{name}/set-read-value", dependencies=[Depends(authenticate)])

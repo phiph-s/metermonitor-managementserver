@@ -153,7 +153,10 @@ if config['http']['enabled']:
         start_mqtt_handler(MQTT_CONFIG)
         yield
 
-    app = prepare_setup_app(config, lifespan, restart_mqtt_fn=restart_mqtt_from_db)
+    def get_mqtt_client():
+        return _active_mqtt_handler.client if _active_mqtt_handler else None
+
+    app = prepare_setup_app(config, lifespan, restart_mqtt_fn=restart_mqtt_from_db, get_mqtt_client_fn=get_mqtt_client)
     log(f"[INIT] Started setup server on http://{config['http']['host']}:{config['http']['port']}")
     uvicorn.run(app, host=config['http']['host'], port=config['http']['port'], log_level="error")
 
