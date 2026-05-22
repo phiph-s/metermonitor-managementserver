@@ -15,8 +15,14 @@
             :last-3-digits-narrow="last3DigitsNarrow"
             :segments="segments"
             :rotated180="rotated180"
+            :flip-horizontal="flipHorizontal"
+            :brightness-adjust="brightnessAdjust"
+            :contrast-adjust="contrastAdjust"
+            :saturation-adjust="saturationAdjust"
             :roi-extractor="roiExtractor"
             :segment-mode="segmentMode"
+            :meter-type="meterType"
+            :unit="unit"
             :capturing="capturing"
             :template-points="templatePoints"
             :digit-quads="templateDigitQuads"
@@ -153,6 +159,10 @@ const segments = computed(() => settings.value?.segments || 0);
 const extendedLastDigit = computed(() => settings.value?.extended_last_digit || false);
 const last3DigitsNarrow = computed(() => settings.value?.shrink_last_3 || false);
 const rotated180 = computed(() => settings.value?.rotated_180 || false);
+const flipHorizontal = computed(() => settings.value?.flip_horizontal || false);
+const brightnessAdjust = computed(() => settings.value?.brightness_adjust ?? 0);
+const contrastAdjust = computed(() => settings.value?.contrast_adjust ?? 0);
+const saturationAdjust = computed(() => settings.value?.saturation_adjust ?? 0);
 const roiExtractor = computed(() => settings.value?.roi_extractor || 'yolo');
 const segmentMode = computed(() => settings.value?.segment_mode || 'display');
 const templateId = computed(() => settings.value?.template_id || null);
@@ -163,6 +173,8 @@ const confThreshold = computed(() => settings.value?.conf_threshold);
 const useCorrectionAlg = computed(() => settings.value?.use_correctional_alg ?? true);
 const digitModels = computed(() => settings.value?.digit_models || null);
 const decimals = computed(() => Number.isFinite(settings.value?.decimals) ? settings.value.decimals : 3);
+const meterType = computed(() => settings.value?.meter_type || 'WATER');
+const unit = computed(() => settings.value?.unit ?? null);
 const docsBase = 'https://metermonitor-io.github.io/#/';
 const docsLink = (page) => `${docsBase}${page}`;
 
@@ -223,15 +235,10 @@ const tresholdedImages = computed(() => {
   return evaluation.value?.tresholded_images || [];
 });
 
-// Handler for segmentation step completion - triggers auto threshold search
+// Handler for segmentation step completion
 const onSegmentationNext = () => {
   setupStore.nextStep(1);
   currentlyFocusedStep.value = 2;
-
-  // Automatically start threshold search with default depth (10)
-  if (import.meta.env.VITE_E2E_SKIP_THRESHOLD_SEARCH !== 'true') {
-    setupStore.searchThresholds(id, 10);
-  }
 };
 
 onMounted(() => {

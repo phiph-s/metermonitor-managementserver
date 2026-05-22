@@ -1,5 +1,5 @@
 <template>
-  <n-modal v-model:show="show" preset="card" title="Add watermeter" style="max-width: 860px;" :mask-closable="!saving && !testing" :closable="!testing">
+  <n-modal v-model:show="show" preset="card" title="Add meter" style="max-width: 860px;" :mask-closable="!saving && !testing" :closable="!testing">
     <n-space vertical size="large">
 
       <n-form :model="form" :disabled="saving || testing" label-placement="top">
@@ -8,7 +8,7 @@
           <n-select v-model:value="selectedType" :options="typeOptions" data-testid="source-type-select" />
           </n-form-item-gi>
 
-          <n-form-item-gi :span="12" label="Watermeter name" v-if="selectedType !== 'mqtt'">
+          <n-form-item-gi :span="12" label="Meter name" v-if="selectedType !== 'mqtt'">
             <n-input v-model:value="form.name" placeholder="e.g. Hauptzaehler" data-testid="source-name-input" />
           </n-form-item-gi>
 

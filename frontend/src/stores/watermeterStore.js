@@ -8,6 +8,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
   const evaluations = ref([]);
   const evaluation = ref({});
   const history = ref(null);
+  const dailyHistory = ref(null);
   const source = ref(null);
   const capturing = ref(false);
   const defaultSettings = {
@@ -20,6 +21,10 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     extended_last_digit: false,
     shrink_last_3: false,
     rotated_180: false,
+    flip_horizontal: false,
+    brightness_adjust: 0,
+    contrast_adjust: 0,
+    saturation_adjust: 0,
     max_flow_rate: 1.0,
     conf_threshold: null,
     roi_extractor: 'yolo',
@@ -28,6 +33,8 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     use_correctional_alg: false,
     digit_models: null,
     decimals: 3,
+    meter_type: 'WATER',
+    unit: null,
   };
 
   const settings = reactive({ ...defaultSettings });
@@ -64,6 +71,12 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     return data;
   };
 
+  const fetchDailyHistory = async (meterId) => {
+    const data = await apiService.getJson(`api/watermeters/${meterId}/daily-history`);
+    dailyHistory.value = data;
+    return data;
+  };
+
   const fetchSettings = async (meterId) => {
     const data = await apiService.getJson(`api/watermeters/${meterId}/settings`);
 
@@ -78,6 +91,10 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       extended_last_digit: data.extended_last_digit === 1,
       shrink_last_3: data.shrink_last_3 === 1,
       rotated_180: data.rotated_180 === 1,
+      flip_horizontal: data.flip_horizontal === 1 || data.flip_horizontal === true,
+      brightness_adjust: data.brightness_adjust ?? 0,
+      contrast_adjust: data.contrast_adjust ?? 0,
+      saturation_adjust: data.saturation_adjust ?? 0,
       max_flow_rate: data.max_flow_rate,
       conf_threshold: data.conf_threshold,
       roi_extractor: data.roi_extractor || 'yolo',
@@ -85,7 +102,9 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       segment_mode: data.segment_mode || 'display',
       use_correctional_alg: data.use_correctional_alg === 1 || data.use_correctional_alg === true,
       digit_models: Array.isArray(data.digit_models) ? data.digit_models : null,
-      decimals: Number.isFinite(data.decimals) ? data.decimals : 3
+      decimals: Number.isFinite(data.decimals) ? data.decimals : 3,
+      meter_type: data.meter_type || 'WATER',
+      unit: data.unit ?? null,
     });
 
     return data;
@@ -99,6 +118,10 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       threshold_last_high: settings.threshold_last_high,
       islanding_padding: settings.islanding_padding,
       rotated_180: settings.rotated_180,
+      flip_horizontal: settings.flip_horizontal,
+      brightness_adjust: settings.brightness_adjust ?? 0,
+      contrast_adjust: settings.contrast_adjust ?? 0,
+      saturation_adjust: settings.saturation_adjust ?? 0,
       segments: settings.segments,
       extended_last_digit: settings.extended_last_digit,
       shrink_last_3: settings.shrink_last_3,
@@ -110,6 +133,8 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       use_correctional_alg: settings.use_correctional_alg,
       digit_models: settings.digit_models,
       decimals: settings.decimals,
+      meter_type: settings.meter_type || 'WATER',
+      unit: settings.unit ?? null,
     };
 
     await apiService.put(`api/watermeters/${meterId}/settings`, payload);
@@ -127,6 +152,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     evaluations.value = null;
     evaluation.value = null;
     history.value = null;
+    dailyHistory.value = null;
     source.value = null;
     Object.assign(settings, defaultSettings);
   };
@@ -136,6 +162,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
       fetchWatermeter(meterId),
       fetchEvaluations(meterId),
       fetchHistory(meterId),
+      fetchDailyHistory(meterId),
       fetchSettings(meterId),
       fetchSource(meterId),
     ]);
@@ -147,6 +174,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     evaluations,
     evaluation,
     history,
+    dailyHistory,
     source,
     settings,
     capturing,
@@ -154,6 +182,7 @@ export const useWatermeterStore = defineStore('watermeter', () => {
     fetchWatermeter,
     fetchEvaluations,
     fetchHistory,
+    fetchDailyHistory,
     fetchSettings,
     updateSettings,
     fetchSource,

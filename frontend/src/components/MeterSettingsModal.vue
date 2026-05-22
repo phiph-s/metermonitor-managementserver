@@ -46,6 +46,22 @@
           <n-switch v-model:value="draft.rotated_180" />
         </n-form-item>
 
+        <n-form-item label="Meter Type">
+          <n-select
+            v-model:value="draft.meter_type"
+            :options="meterTypeOptions"
+            style="width: 100%;"
+          />
+        </n-form-item>
+
+        <n-form-item v-if="draft.meter_type === 'CUSTOM'" label="Unit">
+          <n-input
+            v-model:value="draft.unit"
+            placeholder="e.g. kWh, m³, L"
+            style="width: 100%;"
+          />
+        </n-form-item>
+
         <template v-if="!isEachDigitMode">
           <n-form-item label="Extended last digit">
             <n-switch v-model:value="draft.extended_last_digit" />
@@ -99,12 +115,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch, h } from 'vue';
 import {
   NModal, NSpace, NFlex, NForm, NFormItem,
-  NInputNumber, NSwitch, NButton, NAlert, NDivider,
+  NInputNumber, NSwitch, NButton, NAlert, NDivider, NSelect, NInput,
   useMessage
 } from 'naive-ui';
+import { meterTypeColors, meterTypeLabels, METER_TYPES } from '@/utils/meterTypeMeta';
 import { useWatermeterStore } from '@/stores/watermeterStore';
 import { apiService } from '@/services/api';
 
@@ -124,6 +141,15 @@ const showModel = computed({
 
 const isEachDigitMode = computed(() => store.settings?.segment_mode === 'each_digit');
 
+const meterTypeOptions = METER_TYPES.map(t => ({
+  label: meterTypeLabels[t],
+  value: t,
+  renderLabel: () => h('span', [
+    h('span', { style: { color: meterTypeColors[t], fontWeight: 700, marginRight: '6px' } }, '●'),
+    meterTypeLabels[t],
+  ]),
+}));
+
 // --- Settings draft ---
 const draft = reactive({
   max_flow_rate: null,
@@ -131,6 +157,8 @@ const draft = reactive({
   rotated_180: false,
   extended_last_digit: false,
   shrink_last_3: false,
+  meter_type: 'WATER',
+  unit: null,
 });
 
 watch(() => props.show, (val) => {
@@ -140,6 +168,8 @@ watch(() => props.show, (val) => {
     draft.rotated_180 = store.settings.rotated_180 ?? false;
     draft.extended_last_digit = store.settings.extended_last_digit ?? false;
     draft.shrink_last_3 = store.settings.shrink_last_3 ?? false;
+    draft.meter_type = store.settings.meter_type || 'WATER';
+    draft.unit = store.settings.unit ?? null;
     readValue.value = null;
     readValueError.value = '';
     readValueSuccess.value = false;
@@ -174,6 +204,8 @@ const save = async () => {
       rotated_180: draft.rotated_180,
       extended_last_digit: draft.extended_last_digit,
       shrink_last_3: draft.shrink_last_3,
+      meter_type: draft.meter_type,
+      unit: draft.unit,
     });
     // Sync store to reflect saved changes (no full refetch needed for these fields)
     s.max_flow_rate = draft.max_flow_rate;
@@ -181,6 +213,8 @@ const save = async () => {
     s.rotated_180 = draft.rotated_180;
     s.extended_last_digit = draft.extended_last_digit;
     s.shrink_last_3 = draft.shrink_last_3;
+    s.meter_type = draft.meter_type;
+    s.unit = draft.unit;
     message.success('Settings saved.');
     emit('saved');
     showModel.value = false;

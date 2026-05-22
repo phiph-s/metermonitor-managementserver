@@ -106,7 +106,7 @@
       </div>
     </template>
 
-    <MeterCharts :history="history" style="margin-top: 12px;" />
+    <MeterCharts :history="history" :daily-history="dailyHistory" :unit="meterUnit" :daily-avg="dailyAvgValue" style="margin-top: 12px;" />
     
     <template v-if="data && data['WiFi-RSSI']">
       <WifiStatus v-if="data && data['WiFi-RSSI']" :rssi="data['WiFi-RSSI']" />
@@ -198,6 +198,20 @@
           <div class="chip-value">{{ settings.use_correctional_alg ? 'Full' : 'Light' }}</div>
         </div>
       </div>
+      <div class="setting-chip">
+        <n-icon><WaterDropOutlined /></n-icon>
+        <div>
+          <div class="chip-label">Meter Type</div>
+          <div class="chip-value" :style="{ color: meterTypeColor }">{{ meterTypeLabel }}</div>
+        </div>
+      </div>
+      <div v-if="settings.meter_type === 'CUSTOM'" class="setting-chip">
+        <n-icon><TagOutlined /></n-icon>
+        <div>
+          <div class="chip-label">Unit</div>
+          <div class="chip-value">{{ settings.unit || '—' }}</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -232,7 +246,7 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits, computed, h, ref } from 'vue';
+import { defineProps, defineEmits, computed, h, ref, onMounted, watch } from 'vue';
 import {
   NCard,
   NFlex,
@@ -268,8 +282,11 @@ import {
   WarningAmberOutlined,
   ErrorOutlineOutlined,
   RefreshOutlined,
-  EditOutlined
+  EditOutlined,
+  WaterDropOutlined,
+  TagOutlined
 } from '@vicons/material';
+import { getMeterUnit, getMeterTypeColor, getMeterTypeLabel } from '@/utils/meterTypeMeta';
 import MeterSettingsModal from '@/components/MeterSettingsModal.vue';
 import WifiStatus from "@/components/WifiStatus.vue";
 import {useWatermeterStore} from "@/stores/watermeterStore";
@@ -283,7 +300,8 @@ const props = defineProps({
   settings: Object,
   id: String,
   downloadingDataset: Boolean,
-  history: Object
+  history: Object,
+  dailyHistory: Object
 });
 
 const store = useWatermeterStore();
@@ -292,6 +310,18 @@ const emit = defineEmits(['resetToSetup', 'deleteMeter', 'clearEvaluations', 'do
 const showBbox = ref(true);
 const settingsModalOpen = ref(false);
 const editRoiOpen = ref(false);
+const dailyAvgValue = ref(null);
+
+const fetchStats = async () => {
+  if (!props.id) return;
+  try {
+    const s = await apiService.getJson(`api/watermeters/${props.id}/stats`);
+    dailyAvgValue.value = s.daily_avg ?? null;
+  } catch (_) { /* ignore */ }
+};
+
+onMounted(fetchStats);
+watch(() => props.dailyHistory, fetchStats);
 const editRoiLoading = ref(false);
 const editRoiSaving = ref(false);
 const editRoiError = ref('');
@@ -357,7 +387,7 @@ const handleMenuSelect = (key) => {
   if (key === 'setup') {
     dialog.info({
       title: 'Enter Setup Mode',
-      content: 'While the meter is in setup mode, no values will be published. Are you sure?',
+      content: 'While the meter is in setup mode, no values will be published. Are you sure? Most settings can be changed below by pressing "Edit" without entering setup mode.',
       positiveText: 'Setup',
       negativeText: 'Cancel',
       onPositiveClick: () => emit('resetToSetup')
@@ -507,6 +537,10 @@ const extractorLabel = computed(() => {
   if (value === 'yolo') return 'AUTO (YOLO)';
   return value.toUpperCase();
 });
+
+const meterUnit = computed(() => getMeterUnit(props.settings?.meter_type || 'WATER', props.settings?.unit));
+const meterTypeColor = computed(() => getMeterTypeColor(props.settings?.meter_type || 'WATER'));
+const meterTypeLabel = computed(() => getMeterTypeLabel(props.settings?.meter_type || 'WATER'));
 
 const formattedTimestamp = computed(() => {
   if (!props.data?.picture?.timestamp) return '';

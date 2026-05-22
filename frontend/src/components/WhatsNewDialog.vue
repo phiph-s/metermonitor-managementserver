@@ -8,7 +8,7 @@
   >
     <n-card :bordered="false" class="whats-new-card">
       <div class="wn-header">
-        <n-tag type="success" size="small" round class="wn-version-tag">v4.0</n-tag>
+        <n-tag type="success" size="small" round class="wn-version-tag">v5.0</n-tag>
         <h2 class="wn-title">What's new in MeterMonitor</h2>
         <p class="wn-subtitle">Here's a summary of what changed in this major release.</p>
       </div>
@@ -38,50 +38,50 @@
 import { ref, onMounted } from 'vue';
 import { NModal, NCard, NButton, NTag, NIcon } from 'naive-ui';
 import {
-  WifiOutlined,
-  ViewColumnOutlined,
-  DisplaySettingsOutlined,
-  DialpadOutlined,
-  BoltOutlined,
-  HelpOutlineFilled,
+  SettingsOutlined,
+  ShowChartOutlined,
+  WifiTetheringOutlined,
+  SpeedOutlined,
+  CalendarTodayOutlined,
+  TuneOutlined,
 } from '@vicons/material';
 
 const VERSION_KEY = 'whats_new_seen';
-const CURRENT_VERSION = '4.0';
+const CURRENT_VERSION = '5.0';
 
 const show = ref(false);
 
 const features = [
   {
-    icon: DisplaySettingsOutlined,
-    title: 'Per-digit model selection',
-    desc: 'Each digit can now independently use the rotating-wheel model or the new 7-segment LCD model — mix and match on a single meter.',
+    icon: SpeedOutlined,
+    title: 'Meter type & unit support',
+    desc: 'Meters can be configured as Water, Gas, Electricity or custom types. Each type has a default unit and color — shown across cards, charts and evaluation details.',
   },
   {
-    icon: ViewColumnOutlined,
-    title: 'Per-digit bounding boxes',
-    desc: 'ORB and Static Rectangle extractors now support individual crop regions for each digit, giving precise control over unusual or unevenly spaced meters.',
+    icon: ShowChartOutlined,
+    title: 'Daily history & consumption charts',
+    desc: 'A new daily history table records one snapshot per day and is never pruned. The meter view now shows both a detailed and a daily chart with average consumption.',
   },
   {
-    icon: DialpadOutlined,
-    title: 'Configurable decimal precision',
-    desc: 'Set exactly how many of the rightmost digits appear after the decimal point. The threshold search and digit isolation steps adapt automatically.',
+    icon: CalendarTodayOutlined,
+    title: 'Consumption stats on meter cards',
+    desc: 'Each meter card now shows today\'s consumption, the daily average, and an extrapolated yearly figure — replacing the previous sparkline.',
   },
   {
-    icon: BoltOutlined,
-    title: 'Live evaluation updates',
-    desc: 'The interface now updates in real time via WebSocket when a new reading arrives — no manual refresh needed.',
+    icon: TuneOutlined,
+    title: 'Redesigned navigation',
+    desc: 'The topbar now shows contextual navigation items — Overview, Settings, and the current meter name — with smooth transitions and active-state highlighting.',
   },
   {
-    icon: WifiOutlined,
-    title: 'Simplified MQTT payload',
-    desc: 'Only name and picture.data are required now. WiFi-RSSI, format, timestamp, width, height and length are all optional. Data-URI format (data:image/jpeg;base64,…) is also accepted.',
+    icon: SettingsOutlined,
+    title: 'In-app settings',
+    desc: 'MQTT credentials, broker configuration, and history retention limits can now be changed directly in the UI — no more editing options.json in Home Assistant.',
   },
   {
-    icon: HelpOutlineFilled,
-    title: 'Better documentation',
-    desc: 'Links to the new documentation have been added where suitable.'
-  },
+    icon: WifiTetheringOutlined,
+    title: 'Improved MQTT reliability',
+    desc: 'Wrong credentials now surface as a clear error alert. Reconnect attempts use exponential backoff and only clear the alert once the broker actually accepts the connection.',
+  }
 ];
 
 onMounted(() => {

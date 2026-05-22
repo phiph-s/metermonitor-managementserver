@@ -1,28 +1,53 @@
 <template>
-
-  <n-space vertical size="large">
+  <n-space vertical size="large" justify="center">
     <n-layout>
       <n-layout-content content-style="padding: 24px;">
         <div class="app-header">
-          <div class="header-left">
-            <transition name="back-slide" mode="out-in">
-              <router-link v-if="showBack" to="/" key="back">
-                <n-button quaternary round size="large" style="padding: 0; font-size: 16px;">
-                  ← Back
-                </n-button>
+          <div class="header-bar">
+            <div class="header-left">
+              <img
+                src="@/assets/logo.png"
+                alt="Logo"
+                class="theme-revert header-logo"
+              />
+              <div class="nav-divider"></div>
+              <router-link to="/" class="nav-item" :class="{ active: isOverviewActive }">
+                <n-icon size="15"><HomeOutlined /></n-icon><span v-if="!isMobile">Overview</span>
               </router-link>
-            </transition>
-            <img
-              src="@/assets/logo.png"
-              alt="Logo"
-              class="theme-revert header-logo"
-              :class="{ 'no-back': !showBack }"
-            />
-            <n-tag size="small" :type="buildTagType" class="build-tag">
-              {{ buildTagLabel }}
-            </n-tag>
-          </div>
-          <div class="header-right">
+              <router-link to="/settings" class="nav-item" :class="{ active: route.path === '/settings' }">
+                <n-icon size="15"><SettingsOutlined /></n-icon><span v-if="!isMobile">Settings</span>
+              </router-link>
+              <router-link v-if="currentMeter" :to="(isSetup ? '/setup/' : '/meter/') + currentMeter" class="nav-item active nav-item--meter">
+                <n-icon size="15"><BuildOutlined v-if="isSetup" /><SpeedOutlined v-else /></n-icon><span v-if="!isMobile">{{ currentMeter }}</span>
+              </router-link>
+            </div>
+            <div class="header-right">
+            <span class="build-version" :style="{ color: buildVersionColor }">{{ buildTagLabel }}</span>
+            <n-popover
+              v-if="alertKeys.length > 0"
+              trigger="click"
+              placement="bottom-end"
+              :show-arrow="false"
+            >
+              <template #trigger>
+                <n-button
+                  circle
+                  quaternary
+                  size="small"
+                  :style="{ color: alertIconColor }"
+                >
+                  <template #icon>
+                    <n-icon size="18"><WarningAmberOutlined /></n-icon>
+                  </template>
+                </n-button>
+              </template>
+              <div class="alert-dropdown">
+                <div v-for="key in alertKeys" :key="key" :class="['alert-item', `alert-item--${getAlertType(key, alerts[key])}`]">
+                  <span class="alert-key">{{ key }}</span>
+                  <span class="alert-msg">{{ alerts[key] }}</span>
+                </div>
+              </div>
+            </n-popover>
             <n-tooltip trigger="hover">
               <template #trigger>
                 <n-button
@@ -43,13 +68,17 @@
             </n-tooltip>
             <n-button
               v-if="headerState.showRefresh"
+              circle
+              quaternary
+              size="small"
               :loading="headerState.refreshLoading"
               @click="headerState.onRefresh && headerState.onRefresh()"
-              round
-              size="large"
             >
-              Refresh
+              <template #icon>
+                <n-icon size="18"><RefreshOutlined /></n-icon>
+              </template>
             </n-button>
+            </div>
           </div>
         </div>
         <router-view></router-view>
@@ -57,12 +86,11 @@
       </n-layout-content>
     </n-layout>
   </n-space>
-
 </template>
 
 <script setup>
-import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NTag, useNotification} from 'naive-ui';
-import { LightModeOutlined, DarkModeOutlined } from '@vicons/material';
+import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NPopover, NFlex} from 'naive-ui';
+import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined, RefreshOutlined, HomeOutlined, SettingsOutlined, SpeedOutlined, BuildOutlined } from '@vicons/material';
 import {onMounted, onUnmounted, ref, computed, reactive, provide} from "vue";
 import WhatsNewDialog from '@/components/WhatsNewDialog.vue';
 import { useRoute } from 'vue-router';
@@ -110,11 +138,40 @@ const cycleTheme = () => {
   themeStore.setThemeMode(modes[nextIndex]);
 };
 
-const showBack = computed(() => route.path !== '/');
+const isOverviewActive = computed(() => route.path === '/' || route.path === '/list');
+const currentMeter = computed(() => (route.name === 'Meter' || route.name === 'Setup') ? route.params.id : null);
+const isSetup = computed(() => route.name === 'Setup');
+const isMobile = ref(window.innerWidth < 600);
+const updateMobile = () => { isMobile.value = window.innerWidth < 600; };
+onMounted(() => window.addEventListener('resize', updateMobile));
+onUnmounted(() => window.removeEventListener('resize', updateMobile));
 
-const alerts = ref([]);
+const alerts = ref({});
+const alertKeys = computed(() => Object.keys(alerts.value));
 
-const notification = useNotification();
+const getAlertType = (key, message) => {
+  if (key === 'authentication') return 'warning';
+  if (key === 'mqtt' && message === 'Connecting to MQTT broker') return 'info';
+  return 'error';
+};
+
+const pillType = computed(() => {
+  for (const key of alertKeys.value) {
+    if (getAlertType(key, alerts.value[key]) === 'error') return 'error';
+  }
+  for (const key of alertKeys.value) {
+    if (getAlertType(key, alerts.value[key]) === 'warning') return 'warning';
+  }
+  return 'info';
+});
+
+const alertIconColor = computed(() => {
+  const t = pillType.value;
+  if (t === 'error') return '#d03050';
+  if (t === 'warning') return '#f0a020';
+  return '#2080f0';
+});
+
 const host = import.meta.env.VITE_HOST;
 const websocket = ref(null);
 const reconnectTimer = ref(null);
@@ -128,9 +185,9 @@ const buildTagLabel = computed(() => {
   return `v${__APP_VERSION__ || '0.0.0'}`;
 });
 
-const buildTagType = computed(() => {
+const buildVersionColor = computed(() => {
   const devBranch = (__GIT_BRANCH__ || '').toLowerCase().includes('dev');
-  return (import.meta.env.DEV || devBranch) ? 'warning' : 'success';
+  return (import.meta.env.DEV || devBranch) ? '#f0a020' : '#18a058';
 });
 
 const toWebsocketUrl = (baseHost) => {
@@ -160,6 +217,8 @@ const connectWebsocket = () => {
       const payload = JSON.parse(_event.data);
       if (payload?.type === 'evaluation_created') {
         window.dispatchEvent(new CustomEvent('meter-evaluation-updated', { detail: payload }));
+      } else if (payload?.type === 'alerts_updated') {
+        alerts.value = payload.alerts ?? {};
       }
     } catch (_err) {
       // Ignore malformed websocket payloads.
@@ -176,38 +235,29 @@ const connectWebsocket = () => {
   };
 };
 
-const updateAlerts = async () => {
-  const r = await fetch(host + 'api/alerts', {
-    headers: {secret: localStorage.getItem('secret')}
-  })
-
-  if (r.status === 401) {
-    await router.push({path: '/unlock'});
-    return;
-  }
-
-  alerts.value = await r.json();
-  notification.destroyAll();
-  for (const alert of Object.keys(alerts.value)) {
-    notification.create({
-      title: alert.toUpperCase(),
-      content: alerts.value[alert],
-      closable: false,
-      type: 'error'
+const fetchInitialAlerts = async () => {
+  try {
+    const r = await fetch(host + 'api/alerts', {
+      headers: {secret: localStorage.getItem('secret')}
     });
+    if (r.status === 401) {
+      await router.push({path: '/unlock'});
+      return;
+    }
+    alerts.value = await r.json();
+  } catch (_err) {
+    // Will be updated via WebSocket once connected
   }
-}
-const interval = ref(null);
+};
+
 onMounted(() => {
   websocketStopped.value = false;
-  updateAlerts();
-  interval.value = setInterval(updateAlerts, 60000);
+  fetchInitialAlerts();
   connectWebsocket();
 });
 
 onUnmounted(() => {
   websocketStopped.value = true;
-  clearInterval(interval.value);
   if (reconnectTimer.value) clearTimeout(reconnectTimer.value);
   if (websocket.value) websocket.value.close();
 });
@@ -233,53 +283,157 @@ onUnmounted(() => {
 }
 
 .app-header {
+  margin-bottom: 16px;
+}
+
+.header-bar {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.light-mode .header-bar {
+  background: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .header-left {
   display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.nav-divider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 6px 10px;
+  flex-shrink: 0;
+}
+
+.light-mode .nav-divider {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.nav-item {
+  display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.7;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  opacity: 1;
+}
+
+.light-mode .nav-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.nav-item.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  opacity: 1;
+}
+
+.light-mode .nav-item.active {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.nav-item--meter {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 600px) {
+  .nav-item {
+    padding: 0 8px;
+  }
+  .header-logo {
+    max-width: 70px;
+  }
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
+  flex-shrink: 0;
 }
+
 .header-logo {
   max-width: 100px;
-  margin-left: 20px;
-  transition: margin-left 0.2s ease;
+  align-self: center;
 }
 
 .n-dialog{
   border-radius: 12px;
 }
 
-.header-logo.no-back {
-  margin-left: 0;
+.build-version {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: monospace;
+  opacity: 0.85;
 }
 
-.build-tag {
-  margin-left: 4px;
+.alert-dropdown {
+  min-width: 220px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.back-slide-enter-active,
-.back-slide-leave-active {
-  transition: all 0.2s ease;
+.alert-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid transparent;
 }
 
-.back-slide-enter-from {
-  opacity: 0;
-  transform: translateX(-8px);
+.alert-item--error {
+  border-left-color: #d03050;
+  background: rgba(208, 48, 80, 0.08);
 }
 
-.back-slide-leave-to {
-  opacity: 0;
-  transform: translateX(-8px);
+.alert-item--warning {
+  border-left-color: #f0a020;
+  background: rgba(240, 160, 32, 0.08);
 }
+
+.alert-item--info {
+  border-left-color: #2080f0;
+  background: rgba(32, 128, 240, 0.08);
+}
+
+.alert-key {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.6;
+  letter-spacing: 0.05em;
+}
+
+.alert-msg {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 </style>

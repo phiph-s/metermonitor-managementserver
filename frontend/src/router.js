@@ -5,12 +5,18 @@ import DiscoveryView from "@/views/DiscoveryView.vue";
 import SecretView from "@/views/SecretView.vue";
 import SetupView from "@/views/SetupView.vue";
 import MeterView from "@/views/MeterView.vue";
+import SettingsView from "@/views/SettingsView.vue";
 
 const routes = [
   {
     path: '/',
     name: 'Discovery',
     component: DiscoveryView
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: SettingsView
   },
   {
     path: '/list',

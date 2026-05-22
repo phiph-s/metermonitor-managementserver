@@ -15,6 +15,7 @@
           :settings="settings"
           :id="id"
           :history="history"
+          :daily-history="dailyHistory"
           :downloadingDataset="downloadingDataset"
           @resetToSetup="resetToSetup"
           @triggerCapture="triggerCapture"
@@ -34,7 +35,7 @@
           </div>
         </div>
         <div v-else-if="evaluations !== null" style="padding-left: 10px; padding-right: 10px;">
-          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
         </div>
       </n-tab-pane>
     </n-tabs>
@@ -58,6 +59,7 @@
             :id="id"
             :downloadingDataset="downloadingDataset"
             :history="history"
+          :daily-history="dailyHistory"
             @resetToSetup="resetToSetup"
             @triggerCapture="triggerCapture"
             @deleteMeter="deleteMeter"
@@ -78,7 +80,7 @@
         </div>
       </main>
       <main class="meter-content" v-else-if="evaluations !== null">
-        <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+        <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
       </main>
     </div>
   </template>
@@ -98,9 +100,10 @@ import { useHeaderControls } from '@/composables/headerControls';
 const route = useRoute();
 const id = computed(() => route.params.id);
 const store = useWatermeterStore();
-const { lastPicture: data, evaluations, history, settings } = storeToRefs(store);
+const { lastPicture: data, evaluations, history, dailyHistory, settings } = storeToRefs(store);
 
 const loading = ref(false);
+const refreshing = ref(false);
 const downloadingDataset = ref(false);
 const isMobile = ref(window.innerWidth < 1000);
 const headerControls = useHeaderControls();
@@ -115,15 +118,15 @@ onMounted(() => {
   evaluationEventHandler = (event) => {
     const meterName = event?.detail?.name;
     if (meterName && meterName === id.value) {
-      loadMeter();
+      refreshMeter();
     }
   };
   window.addEventListener('meter-evaluation-updated', evaluationEventHandler);
   if (headerControls) {
     headerControls.setHeader({
       showRefresh: true,
-      onRefresh: loadMeter,
-      refreshLoading: loading.value
+      onRefresh: refreshMeter,
+      refreshLoading: refreshing.value
     });
   }
 });
@@ -138,17 +141,18 @@ onUnmounted(() => {
   }
 });
 
-watch(loading, (next) => {
+watch(refreshing, (next) => {
   if (!headerControls) return;
   headerControls.setHeader({ refreshLoading: next });
 });
 
 const host = import.meta.env.VITE_HOST;
 
+// Initial load: resets data and shows skeletons (used on mount / meter change)
 const loadMeter = async () => {
   loading.value = true;
+  store.resetMeterData();
   try {
-    store.resetMeterData();
     await store.fetchAll(id.value);
   } catch (e) {
     if (e.response && e.response.status === 401) {
@@ -156,6 +160,19 @@ const loadMeter = async () => {
     }
   }
   loading.value = false;
+};
+
+// Background refresh: keeps components mounted, updates data silently
+const refreshMeter = async () => {
+  refreshing.value = true;
+  try {
+    await store.fetchAll(id.value);
+  } catch (e) {
+    if (e.response && e.response.status === 401) {
+      router.push({ path: '/unlock' });
+    }
+  }
+  refreshing.value = false;
 };
 
 watch(
@@ -218,7 +235,7 @@ const triggerCapture = async () => {
     }
 
     // refresh meter data to get the new picture
-    await loadMeter();
+    await refreshMeter();
   } catch (err) {
     message.error('Error triggering capture: ' + err.message);
     console.log('Error triggering capture:', err);
@@ -262,7 +279,7 @@ const deleteDataset = async () => {
 
     if (response.status === 200) {
       // Reload meter data to update dataset_present status
-      await loadMeter();
+      await refreshMeter();
     } else {
       console.log('Error deleting dataset');
     }
@@ -289,7 +306,7 @@ const clearEvaluations = async () => {
       });
 
       // Reload meter data to update evaluations
-      await loadMeter();
+      await refreshMeter();
     } else {
       console.log('Error clearing evaluations');
     }
@@ -360,8 +377,8 @@ const clearEvaluations = async () => {
 }
 
 .light-mode .meter-sidebar {
-  background: rgba(0, 0, 0, 0.04);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .light-mode .evaluations-skeleton-card {

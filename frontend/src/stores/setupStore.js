@@ -144,8 +144,14 @@ export const useSetupStore = defineStore('setup', () => {
     watermeterStore.settings.extended_last_digit = data.extendedLastDigit;
     watermeterStore.settings.shrink_last_3 = data.last3DigitsNarrow;
     watermeterStore.settings.rotated_180 = data.rotated180;
+    watermeterStore.settings.flip_horizontal = data.flipHorizontal ?? false;
+    watermeterStore.settings.brightness_adjust = data.brightnessAdjust ?? 0;
+    watermeterStore.settings.contrast_adjust = data.contrastAdjust ?? 0;
+    watermeterStore.settings.saturation_adjust = data.saturationAdjust ?? 0;
     watermeterStore.settings.roi_extractor = nextExtractor;
     watermeterStore.settings.segment_mode = nextSegmentMode;
+    if (data.meterType !== undefined) watermeterStore.settings.meter_type = data.meterType;
+    if (data.unit !== undefined) watermeterStore.settings.unit = data.unit;
 
     if (nextExtractor !== previousExtractor || nextSegmentMode !== previousSegmentMode) {
       if (!isTemplateExtractor(nextExtractor) || previousExtractor !== nextExtractor || nextSegmentMode !== previousSegmentMode) {

@@ -11,10 +11,15 @@ class EvaluationEventHub:
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
 
-    async def add_client(self, websocket):
+    async def add_client(self, websocket, initial_payload=None):
         await websocket.accept()
         async with self._lock:
             self._clients.add(websocket)
+        if initial_payload is not None:
+            try:
+                await websocket.send_json(initial_payload)
+            except Exception:
+                pass
 
     async def remove_client(self, websocket):
         async with self._lock:

@@ -6,39 +6,52 @@
       </div>
     </template>
     <!-- Search controls -->
-    <n-flex align="center" justify="space-between" style="margin-bottom: 8px; padding-top: 16px;">
-      <n-flex align="center" :size="8">
-        <n-input-group>
-          <n-input-group-label size="small">Depth:</n-input-group-label>
-          <n-input-number
-            v-model:value="searchSteps"
-            :min="3"
-            :max="25"
-            size="small"
-            style="width: 80px;"
-            :disabled="isDisabled"
-          />
-          <n-button
-            @click="startThresholdSearch"
-            size="small"
-            :loading="searchingThresholds"
-            :disabled="isDisabled"
-          >
-            Search Thresholds
-          </n-button>
-        </n-input-group>
+    <div class="search-box" style="margin-top: 16px;">
+      <n-flex align="center" justify="space-between" style="margin-bottom: 8px;">
+        <n-flex align="center" :size="8">
+          <n-input-group>
+            <n-input-group-label size="small">Depth:</n-input-group-label>
+            <n-input-number
+              v-model:value="searchSteps"
+              :min="3"
+              :max="25"
+              size="small"
+              style="width: 80px;"
+              :disabled="isDisabled"
+            />
+            <n-button
+              @click="startThresholdSearch"
+              size="small"
+              :loading="searchingThresholds"
+              :disabled="isDisabled"
+            >
+              Search Thresholds
+            </n-button>
+          </n-input-group>
+        </n-flex>
+        <n-tooltip trigger="hover" placement="top" style="max-width: 300px;">
+          <template #trigger>
+            <n-icon :size="16" style="cursor: help; opacity: 0.6;">
+              <HelpOutlineOutlined />
+            </n-icon>
+          </template>
+          <span>
+            Performs a grid search over threshold values to maximize digit recognition confidence.<br><br>
+            <strong>Note:</strong> This search does not always find the ideal values — manual adjustment of the sliders below may yield better results.
+          </span>
+        </n-tooltip>
       </n-flex>
-    </n-flex>
 
-    <!-- Search status indicator -->
-    <div v-if="searchingThresholds" style="text-align: center; padding: 8px; margin-bottom: 10px; background: rgba(24, 160, 88, 0.15); border-radius: 4px; font-size: 12px;">
-      Searching for optimal thresholds...
-    </div>
+      <!-- Search status indicator -->
+      <div v-if="searchingThresholds" style="text-align: center; padding: 6px; background: rgba(24, 160, 88, 0.15); border-radius: 4px; font-size: 12px;">
+        Searching for optimal thresholds...
+      </div>
 
-    <!-- Search result indicator -->
-    <div v-if="thresholdSearchResult && !thresholdSearchResult.error && !searchingThresholds"
-         style="text-align: center; padding: 8px; margin-bottom: 10px; background: rgba(24, 160, 88, 0.15); border-radius: 4px; font-size: 12px;">
-      ✓ Found: Confidence {{ (thresholdSearchResult.avg_confidence * 100).toFixed(1) }}%
+      <!-- Search result indicator -->
+      <div v-if="thresholdSearchResult && !thresholdSearchResult.error && !searchingThresholds"
+           style="text-align: center; padding: 6px; background: rgba(24, 160, 88, 0.15); border-radius: 4px; font-size: 12px;">
+        ✓ Found: Confidence {{ (thresholdSearchResult.avg_confidence * 100).toFixed(1) }}%
+      </div>
     </div>
 
     <div class="threshold-scroll">
@@ -156,7 +169,7 @@
 <script setup>
 import {NFlex, NCard, NDivider, NButton, NSlider, NInputNumber, NSpin, NInputGroup, NInputGroupLabel, NIcon, NTooltip} from 'naive-ui';
 import {defineProps, defineEmits, ref, watch, onMounted, computed} from 'vue';
-import { SwapVertOutlined, ChevronLeftOutlined, ChevronRightOutlined } from '@vicons/material';
+import { SwapVertOutlined, ChevronLeftOutlined, ChevronRightOutlined, HelpOutlineOutlined } from '@vicons/material';
 import sevenSegIcon from '@/assets/icons/seven-seg.svg';
 
 const props = defineProps([
@@ -437,6 +450,14 @@ async function thresholdImage(base64, threshold, islanding_padding = 0) {
 .th {
   border: 1px solid rgba(255, 255, 255, 0.16);
   mix-blend-mode: screen;
+}
+
+.search-box {
+  border: 1px solid rgba(125, 125, 125, 0.3);
+  border-radius: 6px;
+  padding: 10px 10px 2px;
+  margin-bottom: 12px;
+  background: rgba(125, 125, 125, 0.06);
 }
 
 .threshold-scroll {

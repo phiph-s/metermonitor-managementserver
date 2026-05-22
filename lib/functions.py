@@ -2,6 +2,7 @@ from lib.log import log
 import base64
 import sqlite3
 import json
+from datetime import date as _date
 
 from PIL import Image
 from io import BytesIO
@@ -139,7 +140,8 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         # Get current settings for the watermeter
         cursor.execute('''
                    SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding,
-                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg
+                    segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg,
+                    flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust
                    FROM settings
                    WHERE name = ?
                ''', (name,))
@@ -159,6 +161,10 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         digit_models = settings[14] if len(settings) > 14 else None
         decimals = settings[15] if len(settings) > 15 and settings[15] is not None else 3
         use_correctional_alg = bool(settings[16]) if settings[16] is not None else True
+        flip_horizontal = bool(settings[17]) if len(settings) > 17 and settings[17] is not None else False
+        brightness_adjust = int(settings[18]) if len(settings) > 18 and settings[18] is not None else 0
+        contrast_adjust = int(settings[19]) if len(settings) > 19 and settings[19] is not None else 0
+        saturation_adjust = int(settings[20]) if len(settings) > 20 and settings[20] is not None else 0
 
         # Get the target_brightness from the last history entry
         cursor.execute("SELECT target_brightness FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
@@ -196,7 +202,11 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             target_brightness=target_brightness,
             roi_extractor=roi_extractor,
             extractor_instance=extractor_instance,
-            segment_mode=segment_mode
+            segment_mode=segment_mode,
+            flip_horizontal=flip_horizontal,
+            brightness_adjust=brightness_adjust,
+            contrast_adjust=contrast_adjust,
+            saturation_adjust=saturation_adjust
         )
 
         if not result or len(result) == 0:
@@ -248,6 +258,25 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
             used_confidence = correction.get("used_confidence", 0.0)
             if correction.get("accepted"):
                 value = correction.get("value")
+
+                # Snapshot previous entry into daily_history if it's from a prior day
+                today = timestamp[:10] if timestamp else None
+                if today:
+                    cursor.execute('''
+                        SELECT value, timestamp FROM history
+                        WHERE name = ?
+                        ORDER BY ROWID DESC LIMIT 1
+                    ''', (name,))
+                    prev = cursor.fetchone()
+                    if prev:
+                        prev_value, prev_ts = prev
+                        prev_date = prev_ts[:10] if prev_ts else None
+                        if prev_date and prev_date < today:
+                            cursor.execute('''
+                                INSERT OR IGNORE INTO daily_history (name, value, date)
+                                VALUES (?, ?, ?)
+                            ''', (name, prev_value, prev_date))
+
                 cursor.execute('''
                     INSERT INTO history (name, value, confidence, used_confidence, target_brightness, timestamp, manual)
                     VALUES (?,?,?,?,?,?,?)
@@ -275,7 +304,9 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
                 ''', (name, name, config['max_history']))
 
                 if publish and mqtt_client:
+                    conn.commit()
                     publish_value(mqtt_client, config, name, value, decimals=decimals)
+                    publish_stats(db_file, mqtt_client, config, name, decimals=decimals)
 
         curser = cursor.execute('''
             SELECT COUNT(*) FROM evaluations  
@@ -400,43 +431,171 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         log(f"[Eval ({name})] Prediction saved")
         return target_brightness, confidence, boundingboxed_image
 
+def compute_daily_avg(rows):
+    """Compute daily average consumption from daily_history rows [(value, date), ...].
+
+    Returns (daily_avg, yearly_est, days_of_data) or (None, None, 0).
+    Gaps between entries are properly accounted for by dividing delta value by
+    the actual number of calendar days elapsed, so a 5-day gap counts as 5 days.
+    """
+    if len(rows) < 2:
+        return None, None, 0
+    total_consumption = 0
+    total_days = 0
+    for i in range(len(rows) - 1):
+        v1, d1 = rows[i]
+        v2, d2 = rows[i + 1]
+        try:
+            delta_days = (_date.fromisoformat(d2[:10]) - _date.fromisoformat(d1[:10])).days
+        except Exception:
+            delta_days = 1
+        if delta_days <= 0:
+            continue
+        total_consumption += max(0, v2 - v1)
+        total_days += delta_days
+    if total_days == 0:
+        return None, None, 0
+    daily_avg = total_consumption / total_days
+    return daily_avg, daily_avg * 365, total_days
+
+
+# HA device-class / default-unit / display label / unique_id prefix per meter type
+_HA_METER_META = {
+    'WATER':       ('water',  'm³',  'Water usage',       'watermeter'),
+    'GAS':         ('gas',    'm³',  'Gas usage',         'gasmeter'),
+    'ELECTRICITY': ('energy', 'kWh', 'Electricity usage', 'electricitymeter'),
+}
+
+def _ha_meta(meter_type, unit):
+    """Return (device_class_or_None, resolved_unit, display_label, id_prefix) for HA discovery."""
+    if meter_type in _HA_METER_META:
+        dc, default_unit, label, id_prefix = _HA_METER_META[meter_type]
+        return dc, unit or default_unit, label, id_prefix
+    return None, unit or '', 'Usage', 'custommeter'
+
+
 # Function to publish the value to the MQTT broker, compatible with Home Assistant
-def publish_value(mqtt_client, config, name, value, decimals=3):
-    # publish to topic
+def publish_value(mqtt_client, config, name, value, decimals=3, unit=None):
     topic = config["publish_to"].replace("{device}", name) + "value"
     scale = 10 ** int(decimals or 0)
-    dict = {
-        "value": int(value) / float(scale),
-    }
-    mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
-    log(f"[Eval/MQTT ({name})] Value published ({value} m³)")
+    mqtt_client.publish(topic, json.dumps({"value": int(value) / float(scale)}), qos=1, retain=True)
+    log(f"[Eval/MQTT ({name})] Value published ({int(value) / float(scale)} {unit or ''})")
 
-# Function to publish the registration to the MQTT broker, compatible with Home Assistant
-def publish_registration(mqtt_client, config, name, type):
-    # publish to topic
-    topic = config["publish_to"].replace("{device}", name) + "config"
-    dict = {
-      "name": "Water usage",
-      "state_topic": config["publish_to"].replace("{device}", name) + type,
-      "unit_of_measurement": "m³",
-      "device_class": "water",
-      "unique_id": "watermeter_" + name,
-      "value_template": "{{ value_json.value }}",
-      "device": {
-        "identifiers": ["watermeter_" + name],
+
+# Function to publish the registration to the MQTT broker, compatible with Home Assistant.
+# Registers the main reading sensor plus today/daily-avg/yearly-est consumption sensors.
+def publish_registration(mqtt_client, config, name, _type='value', meter_type='WATER', unit=None):
+    base = config["publish_to"].replace("{device}", name)
+    device_class, ha_unit, label, id_prefix = _ha_meta(meter_type, unit)
+
+    device_info = {
+        "identifiers": [f"{id_prefix}_{name}"],
         "name": name,
         "manufacturer": "DIY",
         "model": "WM-1",
-        "sw_version": "1.0"
-      }
+        "sw_version": "1.0",
     }
-    mqtt_client.publish(topic, json.dumps(dict), qos=1, retain=True)
-    log(f"[Eval/MQTT ({name})] HA compatible Registration published")
+
+    def _sensor(suffix, sensor_name, state_topic_suffix, state_class):
+        p = {
+            "name": sensor_name,
+            "state_topic": base + state_topic_suffix,
+            "unit_of_measurement": ha_unit,
+            "unique_id": f"{id_prefix}_{name}{suffix}",
+            "value_template": "{{ value_json.value }}",
+            "state_class": state_class,
+            "device": device_info,
+        }
+        if device_class:
+            p["device_class"] = device_class
+        return p
+
+    # Main reading (total_increasing — monotonically rising meter counter)
+    disc_base = config["publish_to"]
+    mqtt_client.publish(
+        disc_base.replace("{device}", name) + "config",
+        json.dumps(_sensor("", label, "value", "total_increasing")),
+        qos=1, retain=True,
+    )
+    # Today's consumption
+    mqtt_client.publish(
+        disc_base.replace("{device}", name + "_today") + "config",
+        json.dumps(_sensor("_today", f"{label} today", "today", "measurement")),
+        qos=1, retain=True,
+    )
+    # Daily average
+    mqtt_client.publish(
+        disc_base.replace("{device}", name + "_daily_avg") + "config",
+        json.dumps(_sensor("_daily_avg", f"{label} daily avg", "daily_avg", "measurement")),
+        qos=1, retain=True,
+    )
+    # Yearly estimate
+    mqtt_client.publish(
+        disc_base.replace("{device}", name + "_yearly_est") + "config",
+        json.dumps(_sensor("_yearly_est", f"{label} yearly est", "yearly_est", "measurement")),
+        qos=1, retain=True,
+    )
+    log(f"[Eval/MQTT ({name})] HA sensor registrations published ({label}, {ha_unit})")
+
+
+# Function to compute and publish today/daily-avg/yearly-est stats to MQTT
+def publish_stats(db_file, mqtt_client, config, name, decimals=3):
+    scale = 10 ** int(decimals or 0)
+    base = config["publish_to"].replace("{device}", name)
+
+    with sqlite3.connect(db_file, timeout=30) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,))
+        row = cursor.fetchone()
+        current_value = row[0] if row else None
+
+        cursor.execute("SELECT value FROM daily_history WHERE name = ? ORDER BY date DESC LIMIT 1", (name,))
+        row = cursor.fetchone()
+        last_daily_value = row[0] if row else None
+
+        cursor.execute("SELECT value, date FROM daily_history WHERE name = ? ORDER BY date ASC", (name,))
+        rows = cursor.fetchall()
+
+    today = None
+    if current_value is not None and last_daily_value is not None:
+        today = max(0, current_value - last_daily_value)
+
+    daily_avg, yearly_est, _ = compute_daily_avg(rows)
+
+    def fmt(v):
+        return round(v / scale, max(0, int(decimals or 0))) if v is not None else None
+
+    if today is not None:
+        mqtt_client.publish(base + "today", json.dumps({"value": fmt(today)}), qos=1, retain=True)
+    if daily_avg is not None:
+        mqtt_client.publish(base + "daily_avg", json.dumps({"value": fmt(daily_avg)}), qos=1, retain=True)
+    if yearly_est is not None:
+        mqtt_client.publish(base + "yearly_est", json.dumps({"value": fmt(yearly_est)}), qos=1, retain=True)
+    log(f"[Eval/MQTT ({name})] Consumption stats published")
 
 # Function to add a history entry to the database, removing old entries
 def add_history_entry(db_file: str, name: str, value: int, confidence:int, target_brightness: float, timestamp: str, config, manual: bool = False):
     with sqlite3.connect(db_file, timeout=30) as conn:
         cursor = conn.cursor()
+
+        # Before inserting, check if the previous history entry is from yesterday —
+        # if so, snapshot it into daily_history (one row per day, never pruned).
+        today = timestamp[:10]  # "YYYY-MM-DD"
+        cursor.execute('''
+            SELECT value, timestamp FROM history
+            WHERE name = ?
+            ORDER BY ROWID DESC LIMIT 1
+        ''', (name,))
+        prev = cursor.fetchone()
+        if prev:
+            prev_value, prev_ts = prev
+            prev_date = prev_ts[:10] if prev_ts else None
+            if prev_date and prev_date < today:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO daily_history (name, value, date)
+                    VALUES (?, ?, ?)
+                ''', (name, prev_value, prev_date))
+
         cursor.execute('''
             INSERT INTO history (name, value, confidence, target_brightness, timestamp, manual)
             VALUES (?,?,?,?,?,?)
@@ -449,7 +608,7 @@ def add_history_entry(db_file: str, name: str, value: int, confidence:int, targe
             manual
         ))
 
-        # remove old entries (keep 30)
+        # Remove old detailed entries beyond max_history limit
         cursor.execute('''
             DELETE FROM history
             WHERE name = ?

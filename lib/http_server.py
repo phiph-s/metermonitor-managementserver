@@ -29,10 +29,10 @@ from datetime import datetime
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, FileResponse, StreamingResponse
 
-from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits
+from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits, publish_registration, compute_daily_avg
 from lib.ha_flash_suggestion import suggest_flash_entity
 from lib.model_singleton import get_meter_predictor
-from lib.global_alerts import get_alerts, add_alert
+from lib.global_alerts import get_alerts, add_alert, remove_alert, set_change_callback
 from lib.ha_auth import get_ha_token, add_ha_auth_header
 from lib.threshold_optimizer import search_thresholds_for_meter
 from lib.capture_utils import capture_and_process_source, capture_from_ha_source, capture_from_http_source
@@ -44,10 +44,13 @@ from lib.realtime_events import evaluation_event_hub
 # http server class
 # FastAPOI automatically creates a documentation for the API on the path /docs
 
-def prepare_setup_app(config, lifespan):
+def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn=None):
     app = FastAPI(lifespan=lifespan)
     SECRET_KEY = config['secret_key']
     db_connection = lambda: sqlite3.connect(config['dbfile'])
+
+    # Push alert changes over WebSocket
+    set_change_callback(lambda current_alerts: evaluation_event_hub.notify({"type": "alerts_updated", "alerts": current_alerts}))
 
     # Warn user if secret key is not changed
     if config['secret_key'] == "change_me" and config['enable_auth']:
@@ -92,7 +95,7 @@ def prepare_setup_app(config, lifespan):
         if config['enable_auth'] and secret != SECRET_KEY:
             await websocket.close(code=1008)
             return
-        await evaluation_event_hub.add_client(websocket)
+        await evaluation_event_hub.add_client(websocket, initial_payload={"type": "alerts_updated", "alerts": get_alerts()})
         try:
             while True:
                 await websocket.receive_text()
@@ -135,6 +138,12 @@ def prepare_setup_app(config, lifespan):
         digit_models: Optional[List[str]] = None
         decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
+        meter_type: Optional[str] = 'WATER'
+        unit: Optional[str] = None
+        flip_horizontal: Optional[bool] = False
+        brightness_adjust: Optional[int] = 0
+        contrast_adjust: Optional[int] = 0
+        saturation_adjust: Optional[int] = 0
 
     class CaptureNowRequest(BaseModel):
         cam_entity_id: Optional[str] = None
@@ -162,6 +171,12 @@ def prepare_setup_app(config, lifespan):
         digit_models: Optional[List[str]] = None
         decimals: Optional[int] = 3
         use_correctional_alg: Optional[bool] = True
+        meter_type: Optional[str] = 'WATER'
+        unit: Optional[str] = None
+        flip_horizontal: Optional[bool] = False
+        brightness_adjust: Optional[int] = 0
+        contrast_adjust: Optional[int] = 0
+        saturation_adjust: Optional[int] = 0
 
     class TemplateCreateRequest(BaseModel):
         name: str
@@ -191,6 +206,15 @@ def prepare_setup_app(config, lifespan):
 
     class ThresholdSearchRequest(BaseModel):
         steps: int = 10
+
+    class GlobalSettingsUpdate(BaseModel):
+        mqtt_broker: Optional[str] = None
+        mqtt_port: Optional[int] = None
+        mqtt_username: Optional[str] = None
+        mqtt_password: Optional[str] = None
+        mqtt_topic: Optional[str] = None
+        max_history: Optional[int] = None
+        max_evals: Optional[int] = None
 
     # --- Camera source models (HA entity polling) ---
     class CameraSourceBase(BaseModel):
@@ -1097,7 +1121,9 @@ def prepare_setup_app(config, lifespan):
                                ORDER BY id DESC
                                LIMIT 1),
                               w.picture_data_bbox IS NOT NULL,
-                              (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1)
+                              (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1),
+                              COALESCE(w.meter_type, 'WATER'),
+                              w.unit
                        FROM watermeters w
                        WHERE w.setup = 1
                        """)
@@ -1107,7 +1133,9 @@ def prepare_setup_app(config, lifespan):
             th_digits = json.loads(row[4]) if row[4] else None
             has_bbox = bool(row[5])
             decimals = row[6] if row[6] is not None else 3
-            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals))
+            meter_type = row[7] if row[7] is not None else 'WATER'
+            unit = row[8]
+            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals, meter_type, unit))
 
         return {"watermeters": result}
 
@@ -1141,6 +1169,53 @@ def prepare_setup_app(config, lifespan):
         cursor = db_connection().cursor()
         cursor.execute("SELECT value, timestamp, confidence, manual FROM history WHERE name = ?", (name,))
         return {"history": [row for row in cursor.fetchall()]}
+
+    @app.get("/api/watermeters/{name}/daily-history", dependencies=[Depends(authenticate)])
+    def get_watermeter_daily_history(name: str):
+        cursor = db_connection().cursor()
+        cursor.execute("SELECT value, date FROM daily_history WHERE name = ? ORDER BY date ASC", (name,))
+        return {"history": [row for row in cursor.fetchall()]}
+
+    @app.get("/api/watermeters/{name}/stats", dependencies=[Depends(authenticate)])
+    def get_watermeter_stats(name: str):
+        """Return today/daily-avg/yearly-avg consumption stats for the card view."""
+        cursor = db_connection().cursor()
+
+        # Latest meter reading from history
+        cursor.execute(
+            "SELECT value FROM history WHERE name = ? ORDER BY ROWID DESC LIMIT 1", (name,)
+        )
+        row = cursor.fetchone()
+        current_value = row[0] if row else None
+
+        # Last daily_history entry (most recent completed day)
+        cursor.execute(
+            "SELECT value, date FROM daily_history WHERE name = ? ORDER BY date DESC LIMIT 1", (name,)
+        )
+        row = cursor.fetchone()
+        last_daily_value, last_daily_date = (row[0], row[1]) if row else (None, None)
+
+        # Today's consumption = current - last daily snapshot
+        today_consumption = None
+        if current_value is not None and last_daily_value is not None:
+            today_consumption = max(0, current_value - last_daily_value)
+
+        # Daily average and yearly average from daily_history deltas
+        cursor.execute(
+            "SELECT value, date FROM daily_history WHERE name = ? ORDER BY date ASC", (name,)
+        )
+        rows = cursor.fetchall()
+
+        daily_avg, yearly_avg, days_of_data = compute_daily_avg(rows)
+
+        return {
+            "today_consumption": today_consumption,
+            "last_daily_date": last_daily_date,
+            "daily_avg": daily_avg,
+            "yearly_avg": yearly_avg,
+            "extrapolated": days_of_data is not None and days_of_data < 365,
+            "days_of_data": days_of_data,
+        }
 
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])
     def get_watermeter(name: str):
@@ -1192,6 +1267,10 @@ def prepare_setup_app(config, lifespan):
         cursor.execute("DELETE FROM settings WHERE name = ?", (name,))
         cursor.execute("DELETE FROM sources WHERE name = ?", (name,))
         db.commit()
+        # Remove any alerts associated with this meter
+        for key in list(get_alerts().keys()):
+            if key.startswith(f'polling_{name}'):
+                remove_alert(key)
         return {"message": "Watermeter deleted", "name": name}
 
     @app.post("/api/setup", dependencies=[Depends(authenticate)])
@@ -1223,9 +1302,11 @@ def prepare_setup_app(config, lifespan):
     @app.get("/api/settings/{name}", dependencies=[Depends(authenticate)])
     @app.get("/api/watermeters/{name}/settings", dependencies=[Depends(authenticate)])
     def get_settings(name: str):
-        cursor = db_connection().cursor()
+        db = db_connection()
+        db.row_factory = sqlite3.Row
+        cursor = db.cursor()
         cursor.execute(
-            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg FROM settings WHERE name = ?",
+            "SELECT threshold_low, threshold_high, threshold_last_low, threshold_last_high, islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate, rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg, flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust FROM settings WHERE name = ?",
             (name,))
         row = cursor.fetchone()
         if not row:
@@ -1236,6 +1317,11 @@ def prepare_setup_app(config, lifespan):
                 digit_models = json.loads(digit_models)
             except Exception:
                 digit_models = None
+        # Fetch meter_type and unit from watermeters table
+        cursor.execute("SELECT COALESCE(meter_type, 'WATER'), unit FROM watermeters WHERE name = ?", (name,))
+        wm_row = cursor.fetchone()
+        meter_type = wm_row[0] if wm_row else 'WATER'
+        unit = wm_row[1] if wm_row else None
         return {
             "threshold_low": row[0],
             "threshold_high": row[1],
@@ -1253,7 +1339,13 @@ def prepare_setup_app(config, lifespan):
             "segment_mode": row[13],
             "digit_models": digit_models,
             "decimals": row[15],
-            "use_correctional_alg": row[16]
+            "use_correctional_alg": row[16],
+            "meter_type": meter_type,
+            "unit": unit,
+            "flip_horizontal": bool(row[17]) if row[17] is not None else False,
+            "brightness_adjust": int(row[18]) if row[18] is not None else 0,
+            "contrast_adjust": int(row[19]) if row[19] is not None else 0,
+            "saturation_adjust": int(row[20]) if row[20] is not None else 0,
         }
 
     @app.post("/api/settings", dependencies=[Depends(authenticate)])
@@ -1266,8 +1358,9 @@ def prepare_setup_app(config, lifespan):
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg,
+                                  flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1284,12 +1377,21 @@ def prepare_setup_app(config, lifespan):
                                             segment_mode=excluded.segment_mode,
                                             digit_models=excluded.digit_models,
                                             decimals=excluded.decimals,
-                                            use_correctional_alg=excluded.use_correctional_alg
+                                            use_correctional_alg=excluded.use_correctional_alg,
+                                            flip_horizontal=excluded.flip_horizontal,
+                                            brightness_adjust=excluded.brightness_adjust,
+                                            contrast_adjust=excluded.contrast_adjust,
+                                            saturation_adjust=excluded.saturation_adjust
             """,
             (settings.name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg,
+             1 if settings.flip_horizontal else 0, settings.brightness_adjust or 0, settings.contrast_adjust or 0, settings.saturation_adjust or 0)
+        )
+        cursor.execute(
+            "UPDATE watermeters SET meter_type = ?, unit = ? WHERE name = ?",
+            (settings.meter_type or 'WATER', settings.unit, settings.name)
         )
         db.commit()
         return {"message": "Thresholds set", "name": settings.name}
@@ -1304,8 +1406,9 @@ def prepare_setup_app(config, lifespan):
             """
             INSERT INTO settings (name, threshold_low, threshold_high, threshold_last_low, threshold_last_high,
                                   islanding_padding, segments, shrink_last_3, extended_last_digit, max_flow_rate,
-                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  rotated_180, conf_threshold, roi_extractor, template_id, segment_mode, digit_models, decimals, use_correctional_alg,
+                                  flip_horizontal, brightness_adjust, contrast_adjust, saturation_adjust)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET threshold_low=excluded.threshold_low,
                                             threshold_high=excluded.threshold_high,
                                             threshold_last_low=excluded.threshold_last_low,
@@ -1322,14 +1425,29 @@ def prepare_setup_app(config, lifespan):
                                             segment_mode=excluded.segment_mode,
                                             digit_models=excluded.digit_models,
                                             decimals=excluded.decimals,
-                                            use_correctional_alg=excluded.use_correctional_alg
+                                            use_correctional_alg=excluded.use_correctional_alg,
+                                            flip_horizontal=excluded.flip_horizontal,
+                                            brightness_adjust=excluded.brightness_adjust,
+                                            contrast_adjust=excluded.contrast_adjust,
+                                            saturation_adjust=excluded.saturation_adjust
             """,
             (name, settings.threshold_low, settings.threshold_high, settings.threshold_last_low,
              settings.threshold_last_high, settings.islanding_padding,
              settings.segments, settings.shrink_last_3, settings.extended_last_digit, settings.max_flow_rate,
-             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg)
+             settings.rotated_180, settings.conf_threshold, settings.roi_extractor or "yolo", settings.template_id, settings.segment_mode or "display", digit_models, decimals, settings.use_correctional_alg,
+             1 if settings.flip_horizontal else 0, settings.brightness_adjust or 0, settings.contrast_adjust or 0, settings.saturation_adjust or 0)
+        )
+        cursor.execute(
+            "UPDATE watermeters SET meter_type = ?, unit = ? WHERE name = ?",
+            (settings.meter_type or 'WATER', settings.unit, name)
         )
         db.commit()
+        if get_mqtt_client_fn:
+            mqtt_client = get_mqtt_client_fn()
+            if mqtt_client:
+                publish_registration(mqtt_client, config, name, 'value',
+                                     meter_type=settings.meter_type or 'WATER',
+                                     unit=settings.unit)
         return {"message": "Settings updated", "name": name}
 
     @app.post("/api/watermeters/{name}/set-read-value", dependencies=[Depends(authenticate)])
@@ -1669,6 +1787,94 @@ def prepare_setup_app(config, lifespan):
 
             # Return the result
             return {"base64": base64r}
+
+    # --- Global settings endpoints ---
+
+    @app.get("/api/global-settings", dependencies=[Depends(authenticate)])
+    def get_global_settings():
+        cursor = db_connection().cursor()
+        cursor.execute("""
+            SELECT mqtt_broker, mqtt_port, mqtt_username, mqtt_password, mqtt_topic, max_history, max_evals
+            FROM global_settings WHERE id = 1
+        """)
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=500, detail="Global settings not found")
+        return {
+            "mqtt_broker": row[0],
+            "mqtt_port": row[1],
+            "mqtt_username": row[2],
+            "mqtt_password": row[3],
+            "mqtt_topic": row[4],
+            "max_history": row[5],
+            "max_evals": row[6],
+        }
+
+    @app.put("/api/global-settings", dependencies=[Depends(authenticate)])
+    def update_global_settings(payload: GlobalSettingsUpdate):
+        db = db_connection()
+        cursor = db.cursor()
+        cursor.execute("""
+            UPDATE global_settings SET
+                mqtt_broker = COALESCE(?, mqtt_broker),
+                mqtt_port = COALESCE(?, mqtt_port),
+                mqtt_username = ?,
+                mqtt_password = ?,
+                mqtt_topic = COALESCE(?, mqtt_topic),
+                max_history = COALESCE(?, max_history),
+                max_evals = COALESCE(?, max_evals)
+            WHERE id = 1
+        """, (
+            payload.mqtt_broker,
+            payload.mqtt_port,
+            payload.mqtt_username,
+            payload.mqtt_password,
+            payload.mqtt_topic,
+            payload.max_history,
+            payload.max_evals,
+        ))
+        db.commit()
+        # Update in-memory config so active requests reflect changes immediately
+        if payload.max_history is not None:
+            config['max_history'] = payload.max_history
+        if payload.max_evals is not None:
+            config['max_evals'] = payload.max_evals
+        log("[HTTP] Global settings updated")
+        return {"result": True}
+
+    @app.post("/api/global-settings/mqtt/restart", dependencies=[Depends(authenticate)])
+    def restart_mqtt():
+        if restart_mqtt_fn is None:
+            raise HTTPException(status_code=501, detail="MQTT restart not available in this mode")
+        try:
+            restart_mqtt_fn()
+            return {"result": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/global-settings/mqtt-supervisor")
+    def get_mqtt_supervisor_credentials():
+        """Fetch MQTT credentials from the HA Supervisor API (only works as HA addon)."""
+        sup_token = os.environ.get('SUPERVISOR_TOKEN')
+        if not sup_token:
+            raise HTTPException(status_code=503, detail="Supervisor token not available")
+        try:
+            req = urllib.request.Request(
+                "http://supervisor/services/mqtt",
+                headers={"Authorization": f"Bearer {sup_token}"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = json.loads(resp.read().decode())
+            # Supervisor wraps the payload under a "data" key
+            data = body.get("data", body)
+            return {
+                "mqtt_broker": data.get("host"),
+                "mqtt_port": data.get("port"),
+                "mqtt_username": data.get("username"),
+                "mqtt_password": data.get("password"),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Failed to fetch supervisor MQTT credentials: {e}")
 
     @app.get("/")
     async def serve_index():

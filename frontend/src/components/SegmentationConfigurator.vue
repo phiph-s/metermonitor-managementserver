@@ -23,6 +23,28 @@
       </n-input-number>
     </n-flex>
 
+    <n-flex justify="space-between" align="center" style="margin-top: 12px;">
+      <span>Meter Type</span>
+      <n-select
+        :value="meterType"
+        :options="meterTypeOptions"
+        :disabled="loading"
+        style="width: 180px;"
+        @update:value="handleUpdate('meterType', $event)"
+      />
+    </n-flex>
+
+    <n-flex v-if="meterType === 'CUSTOM'" justify="space-between" align="center" style="margin-top: 12px;">
+      <span>Unit</span>
+      <n-input
+        :value="unit"
+        placeholder="e.g. kWh, m³, L"
+        :disabled="loading"
+        style="width: 180px;"
+        @update:value="handleUpdate('unit', $event)"
+      />
+    </n-flex>
+
   </n-card><br>
   <n-card size="small">
     <template #cover>
@@ -158,7 +180,7 @@
       {{ reevaluateError }}
     </n-alert>
 
-    <n-flex align="center" :size="8">
+    <n-flex align="center" :size="8" class="padd">
       <n-switch
         :value="rotated180"
         @update:value="handleUpdate('rotated180', $event)"
@@ -170,13 +192,46 @@
       </n-switch>
       <n-tooltip>
         <template #trigger>
-          <span class="tooltip-trigger">
-            <span>180° rotated</span>
-          </span>
+          <span class="tooltip-trigger"><span>180° rotated</span></span>
         </template>
         <span>Enable if the captured image is rotated 180°</span>
       </n-tooltip>
     </n-flex>
+    <n-flex align="center" :size="8" class="padd">
+      <n-switch
+        :value="flipHorizontal"
+        @update:value="handleUpdate('flipHorizontal', $event)"
+        :disabled="loading"
+      >
+        <template #icon>
+          <n-icon size="16"><FlipOutlined /></n-icon>
+        </template>
+      </n-switch>
+      <n-tooltip>
+        <template #trigger>
+          <span class="tooltip-trigger"><span>Flip horizontal</span></span>
+        </template>
+        <span>Mirror the display left-right. In display mode the whole display region is flipped (digit order is reversed); in each-digit mode individual digit crops are mirrored.</span>
+      </n-tooltip>
+    </n-flex>
+
+    <div class="filter-sliders">
+      <div class="filter-row">
+        <span class="filter-label">Brightness</span>
+        <n-slider v-model:value="localBrightness" :min="-100" :max="100" :step="1" :disabled="loading" @dragend="handleUpdate('brightnessAdjust', localBrightness)" style="flex:1;" />
+        <span class="filter-val">{{ localBrightness > 0 ? '+' : '' }}{{ localBrightness }}</span>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Contrast</span>
+        <n-slider v-model:value="localContrast" :min="-100" :max="100" :step="1" :disabled="loading" @dragend="handleUpdate('contrastAdjust', localContrast)" style="flex:1;" />
+        <span class="filter-val">{{ localContrast > 0 ? '+' : '' }}{{ localContrast }}</span>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Saturation</span>
+        <n-slider v-model:value="localSaturation" :min="-100" :max="100" :step="1" :disabled="loading" @dragend="handleUpdate('saturationAdjust', localSaturation)" style="flex:1;" />
+        <span class="filter-val">{{ localSaturation > 0 ? '+' : '' }}{{ localSaturation }}</span>
+      </div>
+    </div>
     <template #action v-if="evaluation">
       <n-flex justify="space-around" :size="[0,0]" v-if="evaluation['colored_digits']">
         <div v-for="[index, base64] in evaluation['colored_digits'].entries()" :key="base64" style="text-align: center;">
@@ -201,15 +256,17 @@
 </template>
 
 <script setup>
-import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon} from 'naive-ui';
-import {defineProps, defineEmits, computed} from 'vue';
+import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon, NSelect, NInput, NSlider} from 'naive-ui';
+import {defineProps, defineEmits, computed, ref, watch, h} from 'vue';
 import {
   AddCircleOutlineOutlined,
   CameraAltOutlined,
   CompressOutlined,
   RotateRightOutlined,
-  GridViewOutlined
+  GridViewOutlined,
+  FlipOutlined,
 } from '@vicons/material';
+import { meterTypeColors, meterTypeLabels, METER_TYPES } from '@/utils/meterTypeMeta';
 import TemplatePointEditor from '@/components/TemplatePointEditor.vue';
 import TemplateDigitEditor from '@/components/TemplateDigitEditor.vue';
 import ROIExtractorSelect from '@/components/ROIExtractorSelect.vue';
@@ -222,6 +279,10 @@ const props = defineProps([
     'last3DigitsNarrow',
     'evaluation',
     'rotated180',
+    'flipHorizontal',
+    'brightnessAdjust',
+    'contrastAdjust',
+    'saturationAdjust',
     'roiExtractor',
     'segmentMode',
     'templatePoints',
@@ -231,7 +292,9 @@ const props = defineProps([
     'capturing',
     'loading',
     'noBoundingBox',
-    'reevaluateError'
+    'reevaluateError',
+    'meterType',
+    'unit'
 ]);
 const emits = defineEmits(['update', 'next', 'recapture', 'updateTemplatePoints', 'updateDigitQuads', 'saveTemplate']);
 
@@ -260,14 +323,36 @@ const isTemplateExtractor = computed(() => ['orb', 'static_rect'].includes(curre
 const segmentModeValue = computed(() => props.segmentMode || 'display');
 const isEachDigitMode = computed(() => segmentModeValue.value === 'each_digit');
 
+const meterTypeOptions = METER_TYPES.map(t => ({
+  label: meterTypeLabels[t],
+  value: t,
+  renderLabel: () => h('span', [
+    h('span', { style: { color: meterTypeColors[t], fontWeight: 700, marginRight: '6px' } }, '●'),
+    meterTypeLabels[t],
+  ]),
+}));
+
+const localBrightness = ref(props.brightnessAdjust ?? 0);
+const localContrast = ref(props.contrastAdjust ?? 0);
+const localSaturation = ref(props.saturationAdjust ?? 0);
+watch(() => props.brightnessAdjust, v => { localBrightness.value = v ?? 0; });
+watch(() => props.contrastAdjust,   v => { localContrast.value   = v ?? 0; });
+watch(() => props.saturationAdjust, v => { localSaturation.value = v ?? 0; });
+
 const handleUpdate = (field, value) => {
   emits('update', {
     segments: field === 'segments' ? value : props.segments,
     extendedLastDigit: field === 'extendedLastDigit' ? value : props.extendedLastDigit,
     last3DigitsNarrow: field === 'last3DigitsNarrow' ? value : props.last3DigitsNarrow,
     rotated180: field === 'rotated180' ? value : props.rotated180,
+    flipHorizontal: field === 'flipHorizontal' ? value : props.flipHorizontal,
+    brightnessAdjust: field === 'brightnessAdjust' ? value : (props.brightnessAdjust ?? 0),
+    contrastAdjust: field === 'contrastAdjust' ? value : (props.contrastAdjust ?? 0),
+    saturationAdjust: field === 'saturationAdjust' ? value : (props.saturationAdjust ?? 0),
     roiExtractor: field === 'roiExtractor' ? value : props.roiExtractor,
-    segmentMode: field === 'segmentMode' ? value : props.segmentMode
+    segmentMode: field === 'segmentMode' ? value : props.segmentMode,
+    meterType: field === 'meterType' ? value : props.meterType,
+    unit: field === 'unit' ? value : props.unit,
   });
 };
 
@@ -328,6 +413,35 @@ const handleUpdate = (field, value) => {
 
 .padd {
   margin-bottom: 10px;
+}
+
+.filter-sliders {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-label {
+  width: 72px;
+  font-size: 13px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.filter-val {
+  width: 32px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .digit-handle {

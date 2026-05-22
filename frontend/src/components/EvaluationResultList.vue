@@ -47,7 +47,7 @@
                       {{ digit }}
                     </template>
                   </span>
-                  <span class="adjustment unit">m³</span>
+                  <span class="adjustment unit">{{ meterUnit }}</span>
                 </div>
               </div>
             </div>
@@ -55,22 +55,9 @@
             <div class="cell conf-cell">
               <div class="label">Confidence</div>
               <template v-if="evaluation.total_confidence">
-                <div class="conf-values" :style="{ color: getColor(evaluation.used_confidence) }">
-                  <n-tooltip trigger="hover" v-if="evaluation.used_confidence !== -1.0">
-                    <template #trigger>
-                      <span class="conf-primary"><b>{{ (evaluation.used_confidence * 100).toFixed(1) }}</b>%</span>
-                    </template>
-                    Used confidence: Only digits accepted by the correction algorithm
-                  </n-tooltip>
-                  <n-tooltip trigger="hover">
-                    <template #trigger>
-                      <span class="conf-secondary" :style="{ color: getColor(evaluation.total_confidence) }">
-                        {{ (evaluation.total_confidence * 100).toFixed(1) }}%
-                      </span>
-                    </template>
-                    Total confidence: All recognized digits
-                  </n-tooltip>
-                </div>
+                <span :style="{ color: getColor(evaluation.total_confidence) }">
+                  <b>{{ (evaluation.total_confidence * 100).toFixed(1) }}</b>%
+                </span>
               </template>
               <div v-else class="rejected-label">
                 Rejected
@@ -136,12 +123,15 @@
       v-model:show="showDetailDialog"
       :evaluation-id="selectedEvaluationId"
       :meter-name="props.name"
+      :meter-type="props.meterType"
+      :unit="props.unit"
     />
   </div>
 </template>
 
 <script setup>
-import {defineProps, h, defineEmits, ref, onMounted, onUnmounted, watch} from 'vue';
+import {defineProps, h, defineEmits, ref, onMounted, onUnmounted, watch, computed} from 'vue';
+import { getMeterUnit } from '@/utils/meterTypeMeta';
 import {NFlex, NTooltip, NEmpty, NButton, NIcon, useDialog} from 'naive-ui';
 import { ArchiveOutlined, ArrowDownwardOutlined } from '@vicons/material';
 import DatasetUploader from "@/components/DatasetUploader.vue";
@@ -168,8 +158,18 @@ const props = defineProps({
   decimals: {
     type: Number,
     default: 3
+  },
+  meterType: {
+    type: String,
+    default: 'WATER'
+  },
+  unit: {
+    type: String,
+    default: null
   }
 });
+
+const meterUnit = computed(() => getMeterUnit(props.meterType, props.unit));
 
 const getDecimals = (digitLength) => {
   const maxDigits = Number.isFinite(digitLength) ? digitLength : 0;
@@ -229,7 +229,7 @@ const formattedTimestamp = (ts) => {
   const date = new Date(ts);
   const diffMs = date.getTime() - Date.now();
   const diffSeconds = Math.round(diffMs / 1000);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat("en-US", { numeric: 'auto' });
   const absSeconds = Math.abs(diffSeconds);
 
   if (absSeconds < 20) return 'just now';

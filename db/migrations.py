@@ -3,7 +3,7 @@ import sqlite3
 import json
 from datetime import datetime
 
-def run_migrations(db_file):
+def run_migrations(db_file, initial_config=None):
     with sqlite3.connect(db_file) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -480,3 +480,80 @@ def run_migrations(db_file):
         if 'use_correctional_alg' not in columns:
             cursor.execute("ALTER TABLE settings ADD COLUMN use_correctional_alg BOOLEAN DEFAULT true")
             log("[MIGRATION] Added 'use_correctional_alg' column to 'settings' table")
+
+        # add meter_type and unit columns to watermeters table
+        cursor.execute("PRAGMA table_info(watermeters)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'meter_type' not in columns:
+            cursor.execute("ALTER TABLE watermeters ADD COLUMN meter_type TEXT DEFAULT 'WATER'")
+            cursor.execute("UPDATE watermeters SET meter_type = 'WATER' WHERE meter_type IS NULL")
+            log("[MIGRATION] Added 'meter_type' column to 'watermeters' table")
+
+        cursor.execute("PRAGMA table_info(watermeters)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'unit' not in columns:
+            cursor.execute("ALTER TABLE watermeters ADD COLUMN unit TEXT DEFAULT NULL")
+            log("[MIGRATION] Added 'unit' column to 'watermeters' table")
+
+        # daily_history table — one row per meter per day, never pruned
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS daily_history (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name      TEXT NOT NULL,
+                value     INTEGER NOT NULL,
+                date      TEXT NOT NULL,
+                UNIQUE(name, date),
+                FOREIGN KEY (name) REFERENCES watermeters (name)
+            )
+        ''')
+
+        # global_settings table — single-row config store
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS global_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                mqtt_broker TEXT DEFAULT 'localhost',
+                mqtt_port INTEGER DEFAULT 1883,
+                mqtt_username TEXT DEFAULT NULL,
+                mqtt_password TEXT DEFAULT NULL,
+                mqtt_topic TEXT DEFAULT 'MeterMonitor/#',
+                max_history INTEGER DEFAULT 200,
+                max_evals INTEGER DEFAULT 100
+            )
+        ''')
+
+        cursor.execute("SELECT COUNT(*) FROM global_settings")
+        if cursor.fetchone()[0] == 0:
+            # Seed from initial_config if provided, else use defaults
+            mqtt = (initial_config or {}).get('mqtt', {})
+            max_history = (initial_config or {}).get('max_history', 200)
+            max_evals = (initial_config or {}).get('max_evals', 100)
+            cursor.execute('''
+                INSERT INTO global_settings
+                    (id, mqtt_broker, mqtt_port, mqtt_username, mqtt_password, mqtt_topic, max_history, max_evals)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                mqtt.get('broker', 'localhost'),
+                int(mqtt.get('port', 1883)),
+                mqtt.get('username') or None,
+                mqtt.get('password') or None,
+                mqtt.get('topic', 'MeterMonitor/#'),
+                int(max_history),
+                int(max_evals),
+            ))
+            log("[MIGRATION] Created global_settings table and seeded from config")
+
+        # add post-processing fields to settings table
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'flip_horizontal' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN flip_horizontal BOOLEAN DEFAULT 0")
+            log("[MIGRATION] Added 'flip_horizontal' column to 'settings' table")
+        if 'brightness_adjust' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN brightness_adjust INTEGER DEFAULT 0")
+            log("[MIGRATION] Added 'brightness_adjust' column to 'settings' table")
+        if 'contrast_adjust' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN contrast_adjust INTEGER DEFAULT 0")
+            log("[MIGRATION] Added 'contrast_adjust' column to 'settings' table")
+        if 'saturation_adjust' not in columns:
+            cursor.execute("ALTER TABLE settings ADD COLUMN saturation_adjust INTEGER DEFAULT 0")
+            log("[MIGRATION] Added 'saturation_adjust' column to 'settings' table")

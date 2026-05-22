@@ -1,5 +1,5 @@
 export const SOURCE_COLORS = {
-  mqtt: '#660066',
+  mqtt: '#a855f7',
   ha_camera: '#41bdf5',
   http: '#9ca3af',
   unknown: '#94a3b8'
