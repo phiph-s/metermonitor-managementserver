@@ -54,34 +54,29 @@ const show = ref(false);
 const features = [
   {
     icon: SpeedOutlined,
-    title: 'Meter type & unit support',
-    desc: 'Meters can be configured as Water, Gas, Electricity or custom types. Each type has a default unit and color — shown across cards, charts and evaluation details.',
+    title: 'Meter type & unit',
+    desc: 'Meters can now be configured as Water, Gas, Electricity or Custom. Each type carries a default unit and color, shown consistently across cards, charts and HA sensors.',
   },
   {
     icon: ShowChartOutlined,
-    title: 'Daily history & consumption charts',
-    desc: 'A new daily history table records one snapshot per day and is never pruned. The meter view now shows both a detailed and a daily chart with average consumption.',
+    title: 'Daily history & charts',
+    desc: 'One snapshot per day is recorded automatically and never pruned. The meter view shows a detailed reading chart and a daily chart with correct gap-aware average consumption.',
   },
   {
     icon: CalendarTodayOutlined,
-    title: 'Consumption stats on meter cards',
-    desc: 'Each meter card now shows today\'s consumption, the daily average, and an extrapolated yearly figure — replacing the previous sparkline.',
+    title: 'Consumption stats',
+    desc: 'Today\'s consumption, daily average and extrapolated yearly figure are shown on every meter card and published to Home Assistant as dedicated sensors.',
   },
   {
     icon: TuneOutlined,
-    title: 'Redesigned navigation',
-    desc: 'The topbar now shows contextual navigation items — Overview, Settings, and the current meter name — with smooth transitions and active-state highlighting.',
+    title: 'Image post-processing',
+    desc: 'New per-meter controls for horizontal flip and brightness, contrast and saturation — applied to extracted digits before recognition. Settings take effect on the next evaluation.',
   },
   {
     icon: SettingsOutlined,
-    title: 'In-app settings',
-    desc: 'MQTT credentials, broker configuration, and history retention limits can now be changed directly in the UI — no more editing options.json in Home Assistant.',
+    title: 'In-app global settings',
+    desc: 'MQTT broker, credentials and retention limits can now be changed directly in the UI. The "Fill from Home Assistant" button auto-imports credentials from the HA supervisor.',
   },
-  {
-    icon: WifiTetheringOutlined,
-    title: 'Improved MQTT reliability',
-    desc: 'Wrong credentials now surface as a clear error alert. Reconnect attempts use exponential backoff and only clear the alert once the broker actually accepts the connection.',
-  }
 ];
 
 onMounted(() => {
