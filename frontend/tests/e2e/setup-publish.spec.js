@@ -189,7 +189,7 @@ const setupMeter = async (page, name) => {
   await readoutInput.fill('1');
 
   const maxFlowInput = page
-    .locator('text=Max. flow rate')
+    .locator('text=Max. flow per hour')
     .locator('..')
     .locator('.n-input__input-el')
     .first();
@@ -205,7 +205,7 @@ const setupMeter = async (page, name) => {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('secret', 'test_token');
-    localStorage.setItem('whats_new_seen', '4.0');
+    localStorage.setItem('whats_new_seen', '5.0');
   });
 });
 
