@@ -29,7 +29,7 @@ from datetime import datetime
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, FileResponse, StreamingResponse
 
-from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits, publish_registration
+from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits, publish_registration, compute_daily_avg
 from lib.ha_flash_suggestion import suggest_flash_entity
 from lib.model_singleton import get_meter_predictor
 from lib.global_alerts import get_alerts, add_alert, remove_alert, set_change_callback
@@ -1206,27 +1206,15 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
         )
         rows = cursor.fetchall()
 
-        daily_avg = None
-        yearly_avg = None
-        extrapolated = False
-
-        if len(rows) >= 2:
-            values = [r[0] for r in rows]
-            deltas = [max(0, values[i+1] - values[i]) for i in range(len(values)-1)]
-            daily_avg = sum(deltas) / len(deltas)
-
-            days_of_data = len(deltas)
-            yearly_avg = daily_avg * 365
-            if days_of_data < 365:
-                extrapolated = True
+        daily_avg, yearly_avg, days_of_data = compute_daily_avg(rows)
 
         return {
             "today_consumption": today_consumption,
             "last_daily_date": last_daily_date,
             "daily_avg": daily_avg,
             "yearly_avg": yearly_avg,
-            "extrapolated": extrapolated,
-            "days_of_data": len(rows) - 1 if len(rows) >= 2 else 0,
+            "extrapolated": days_of_data is not None and days_of_data < 365,
+            "days_of_data": days_of_data,
         }
 
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])

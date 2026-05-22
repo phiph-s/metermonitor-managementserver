@@ -2,6 +2,7 @@ from lib.log import log
 import base64
 import sqlite3
 import json
+from datetime import date as _date
 
 from PIL import Image
 from io import BytesIO
@@ -430,6 +431,34 @@ def reevaluate_latest_picture(db_file: str, name:str, meter_preditor, config, pu
         log(f"[Eval ({name})] Prediction saved")
         return target_brightness, confidence, boundingboxed_image
 
+def compute_daily_avg(rows):
+    """Compute daily average consumption from daily_history rows [(value, date), ...].
+
+    Returns (daily_avg, yearly_est, days_of_data) or (None, None, 0).
+    Gaps between entries are properly accounted for by dividing delta value by
+    the actual number of calendar days elapsed, so a 5-day gap counts as 5 days.
+    """
+    if len(rows) < 2:
+        return None, None, 0
+    total_consumption = 0
+    total_days = 0
+    for i in range(len(rows) - 1):
+        v1, d1 = rows[i]
+        v2, d2 = rows[i + 1]
+        try:
+            delta_days = (_date.fromisoformat(d2[:10]) - _date.fromisoformat(d1[:10])).days
+        except Exception:
+            delta_days = 1
+        if delta_days <= 0:
+            continue
+        total_consumption += max(0, v2 - v1)
+        total_days += delta_days
+    if total_days == 0:
+        return None, None, 0
+    daily_avg = total_consumption / total_days
+    return daily_avg, daily_avg * 365, total_days
+
+
 # HA device-class / default-unit / display label / unique_id prefix per meter type
 _HA_METER_META = {
     'WATER':       ('water',  'm³',  'Water usage',       'watermeter'),
@@ -524,19 +553,14 @@ def publish_stats(db_file, mqtt_client, config, name, decimals=3):
         row = cursor.fetchone()
         last_daily_value = row[0] if row else None
 
-        cursor.execute("SELECT value FROM daily_history WHERE name = ? ORDER BY date ASC", (name,))
+        cursor.execute("SELECT value, date FROM daily_history WHERE name = ? ORDER BY date ASC", (name,))
         rows = cursor.fetchall()
 
     today = None
     if current_value is not None and last_daily_value is not None:
         today = max(0, current_value - last_daily_value)
 
-    daily_avg = yearly_est = None
-    if len(rows) >= 2:
-        values = [r[0] for r in rows]
-        deltas = [max(0, values[i + 1] - values[i]) for i in range(len(values) - 1)]
-        daily_avg = sum(deltas) / len(deltas)
-        yearly_est = daily_avg * 365
+    daily_avg, yearly_est, _ = compute_daily_avg(rows)
 
     def fmt(v):
         return round(v / scale, max(0, int(decimals or 0))) if v is not None else None

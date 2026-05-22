@@ -218,18 +218,18 @@
     <div class="filter-sliders">
       <div class="filter-row">
         <span class="filter-label">Brightness</span>
-        <n-slider :value="brightnessAdjust" :min="-100" :max="100" :step="1" :disabled="loading" @update:value="handleUpdate('brightnessAdjust', $event)" style="flex:1;" />
-        <span class="filter-val">{{ brightnessAdjust > 0 ? '+' : '' }}{{ brightnessAdjust }}</span>
+        <n-slider v-model:value="localBrightness" :min="-100" :max="100" :step="1" :disabled="loading" @dragend="handleUpdate('brightnessAdjust', localBrightness)" style="flex:1;" />
+        <span class="filter-val">{{ localBrightness > 0 ? '+' : '' }}{{ localBrightness }}</span>
       </div>
       <div class="filter-row">
         <span class="filter-label">Contrast</span>
-        <n-slider :value="contrastAdjust" :min="-100" :max="100" :step="1" :disabled="loading" @update:value="handleUpdate('contrastAdjust', $event)" style="flex:1;" />
-        <span class="filter-val">{{ contrastAdjust > 0 ? '+' : '' }}{{ contrastAdjust }}</span>
+        <n-slider v-model:value="localContrast" :min="-100" :max="100" :step="1" :disabled="loading" @dragend="handleUpdate('contrastAdjust', localContrast)" style="flex:1;" />
+        <span class="filter-val">{{ localContrast > 0 ? '+' : '' }}{{ localContrast }}</span>
       </div>
       <div class="filter-row">
         <span class="filter-label">Saturation</span>
-        <n-slider :value="saturationAdjust" :min="-100" :max="100" :step="1" :disabled="loading" @update:value="handleUpdate('saturationAdjust', $event)" style="flex:1;" />
-        <span class="filter-val">{{ saturationAdjust > 0 ? '+' : '' }}{{ saturationAdjust }}</span>
+        <n-slider v-model:value="localSaturation" :min="-100" :max="100" :step="1" :disabled="loading" @dragend="handleUpdate('saturationAdjust', localSaturation)" style="flex:1;" />
+        <span class="filter-val">{{ localSaturation > 0 ? '+' : '' }}{{ localSaturation }}</span>
       </div>
     </div>
     <template #action v-if="evaluation">
@@ -257,7 +257,7 @@
 
 <script setup>
 import {NCard, NFlex, NInputNumber, NSwitch, NButton, NTooltip, NAlert, NSpin, NIcon, NSelect, NInput, NSlider} from 'naive-ui';
-import {defineProps, defineEmits, computed, h} from 'vue';
+import {defineProps, defineEmits, computed, ref, watch, h} from 'vue';
 import {
   AddCircleOutlineOutlined,
   CameraAltOutlined,
@@ -331,6 +331,13 @@ const meterTypeOptions = METER_TYPES.map(t => ({
     meterTypeLabels[t],
   ]),
 }));
+
+const localBrightness = ref(props.brightnessAdjust ?? 0);
+const localContrast = ref(props.contrastAdjust ?? 0);
+const localSaturation = ref(props.saturationAdjust ?? 0);
+watch(() => props.brightnessAdjust, v => { localBrightness.value = v ?? 0; });
+watch(() => props.contrastAdjust,   v => { localContrast.value   = v ?? 0; });
+watch(() => props.saturationAdjust, v => { localSaturation.value = v ?? 0; });
 
 const handleUpdate = (field, value) => {
   emits('update', {

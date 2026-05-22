@@ -86,7 +86,8 @@ const { isDark } = storeToRefs(themeStore);
 const props = defineProps({
   history: { type: Object, default: null },
   dailyHistory: { type: Object, default: null },
-  unit: { type: String, default: 'm³' }
+  unit: { type: String, default: 'm³' },
+  dailyAvg: { type: Number, default: null },
 });
 
 const activeTab = ref('detailed');
@@ -205,14 +206,9 @@ const dailyFrom = computed(() => dailySeries.value[0]?.data[0]?.y ?? '—');
 const dailyTo   = computed(() => { const d = dailySeries.value[0]?.data; return d?.[d.length - 1]?.y ?? '—'; });
 
 const dailyAvgConsumption = computed(() => {
-  if (sortedDaily.value.length < 2) return null;
-  const deltas = [];
-  for (let i = 1; i < sortedDaily.value.length; i++) {
-    const diff = sortedDaily.value[i][0] - sortedDaily.value[i - 1][0];
-    if (diff >= 0) deltas.push(diff);
-  }
-  if (!deltas.length) return null;
-  return (deltas.reduce((a, b) => a + b, 0) / deltas.length) / 1000;
+  if (props.dailyAvg == null) return null;
+  // Backend returns raw integer value; divide by 1000 to match formatUsage expectations
+  return props.dailyAvg / 1000;
 });
 
 const dailyDurationLabel = computed(() => {

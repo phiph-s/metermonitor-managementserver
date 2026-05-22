@@ -1,5 +1,6 @@
 <template>
   <AddSourceDialog v-model:show="showAddSource" :config="config" @created="getData" />
+  <br>
 
   <div v-if="discoveredMeters.length === 0 && waterMeters.length === 0 && config">
     <n-space vertical size="large">
@@ -36,7 +37,6 @@
       <MQTTSetupHelper :config="config"/>
     </n-space>
   </div>
-  <br>
   <template v-if="discoveredMeters.length > 0">
     <div class="elevated-title">
       <n-icon><PendingActionsOutlined /></n-icon>

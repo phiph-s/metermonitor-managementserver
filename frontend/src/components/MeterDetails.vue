@@ -106,7 +106,7 @@
       </div>
     </template>
 
-    <MeterCharts :history="history" :daily-history="dailyHistory" :unit="meterUnit" style="margin-top: 12px;" />
+    <MeterCharts :history="history" :daily-history="dailyHistory" :unit="meterUnit" :daily-avg="dailyAvgValue" style="margin-top: 12px;" />
     
     <template v-if="data && data['WiFi-RSSI']">
       <WifiStatus v-if="data && data['WiFi-RSSI']" :rssi="data['WiFi-RSSI']" />
@@ -246,7 +246,7 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits, computed, h, ref } from 'vue';
+import { defineProps, defineEmits, computed, h, ref, onMounted, watch } from 'vue';
 import {
   NCard,
   NFlex,
@@ -310,6 +310,18 @@ const emit = defineEmits(['resetToSetup', 'deleteMeter', 'clearEvaluations', 'do
 const showBbox = ref(true);
 const settingsModalOpen = ref(false);
 const editRoiOpen = ref(false);
+const dailyAvgValue = ref(null);
+
+const fetchStats = async () => {
+  if (!props.id) return;
+  try {
+    const s = await apiService.getJson(`api/watermeters/${props.id}/stats`);
+    dailyAvgValue.value = s.daily_avg ?? null;
+  } catch (_) { /* ignore */ }
+};
+
+onMounted(fetchStats);
+watch(() => props.dailyHistory, fetchStats);
 const editRoiLoading = ref(false);
 const editRoiSaving = ref(false);
 const editRoiError = ref('');

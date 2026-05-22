@@ -1,103 +1,96 @@
 <template>
   <div class="settings-view">
     <n-spin :show="loading">
-      <n-flex vertical :size="16">
+      <div class="settings-content">
 
         <!-- MQTT -->
-        <n-card size="small">
-          <template #cover>
-            <div class="section-title">MQTT</div>
+        <n-card size="small" class="settings-card">
+          <template #header>
+            <div class="card-title">
+              <n-icon size="15"><WifiOutlined /></n-icon>
+              MQTT
+            </div>
           </template>
+
           <div class="fields">
             <div class="field-row">
               <span class="field-label">Broker</span>
-              <n-input v-model:value="draft.mqtt_broker" placeholder="e.g. 192.168.1.10" style="width: 240px;" />
+              <n-input v-model:value="draft.mqtt_broker" placeholder="192.168.1.10" style="width: 220px;" />
             </div>
             <div class="field-row">
               <span class="field-label">Port</span>
-              <n-input-number v-model:value="draft.mqtt_port" :min="1" :max="65535" style="width: 120px;" />
+              <n-input-number v-model:value="draft.mqtt_port" :min="1" :max="65535" style="width: 110px;" />
             </div>
             <div class="field-row">
               <span class="field-label">Topic</span>
-              <n-input v-model:value="draft.mqtt_topic" placeholder="e.g. MeterMonitor/#" style="width: 240px;" />
+              <n-input v-model:value="draft.mqtt_topic" placeholder="MeterMonitor/#" style="width: 220px;" />
             </div>
+
+            <n-divider style="margin: 4px 0" />
+
             <div class="field-row">
               <span class="field-label">Username</span>
-              <n-input v-model:value="draft.mqtt_username" placeholder="optional" style="width: 200px;" />
+              <n-input v-model:value="draft.mqtt_username" placeholder="optional" style="width: 180px;" />
             </div>
             <div class="field-row">
               <span class="field-label">Password</span>
-              <n-input v-model:value="draft.mqtt_password" type="password" show-password-on="click" placeholder="optional" style="width: 200px;" />
+              <n-input v-model:value="draft.mqtt_password" type="password" show-password-on="click" placeholder="optional" style="width: 180px;" />
             </div>
-            <div v-if="supervisorAvailable !== false" class="field-row">
-              <span class="field-label">
-                Auto-fill from HA
-                <n-tooltip trigger="hover">
-                  <template #trigger>
-                    <n-icon size="14" style="cursor: help; opacity: 0.6; margin-left: 4px;"><HelpOutlineOutlined /></n-icon>
-                  </template>
-                  Fetch MQTT credentials from the Home Assistant Supervisor (only available when running as HA addon)
-                </n-tooltip>
-              </span>
-              <n-button size="small" :loading="fetchingSupervisor" @click="fetchSupervisorCreds">
+
+            <div v-if="supervisorAvailable !== false" class="ha-autofill">
+              <n-button size="small" ghost type="primary" :loading="fetchingSupervisor" @click="fetchSupervisorCreds">
                 <template #icon><n-icon><HomeOutlined /></n-icon></template>
-                Use HA MQTT credentials
+                Fill from Home Assistant
               </n-button>
             </div>
           </div>
         </n-card>
 
         <!-- Retention -->
-        <n-card size="small">
-          <template #cover>
-            <div class="section-title">Retention</div>
+        <n-card size="small" class="settings-card">
+          <template #header>
+            <div class="card-title">
+              <n-icon size="15"><StorageOutlined /></n-icon>
+              Retention
+            </div>
           </template>
+
           <div class="fields">
             <div class="field-row">
-              <span class="field-label">
-                Max detailed history entries
-                <n-tooltip trigger="hover">
-                  <template #trigger>
-                    <n-icon size="14" style="cursor: help; opacity: 0.6; margin-left: 4px;"><HelpOutlineOutlined /></n-icon>
-                  </template>
-                  Maximum number of accepted meter readings stored per meter
-                </n-tooltip>
-              </span>
-              <n-input-number v-model:value="draft.max_history" :min="10" :max="10000" style="width: 120px;" />
+              <div class="field-label-col">
+                <span class="field-label">Max history entries</span>
+                <span class="field-hint">Accepted readings stored per meter</span>
+              </div>
+              <n-input-number v-model:value="draft.max_history" :min="10" :max="10000" style="width: 110px;" />
             </div>
             <div class="field-row">
-              <span class="field-label">
-                Max evaluations
-                <n-tooltip trigger="hover">
-                  <template #trigger>
-                    <n-icon size="14" style="cursor: help; opacity: 0.6; margin-left: 4px;"><HelpOutlineOutlined /></n-icon>
-                  </template>
-                  Maximum number of evaluations (with digit images) stored per meter
-                </n-tooltip>
-              </span>
-              <n-input-number v-model:value="draft.max_evals" :min="10" :max="10000" style="width: 120px;" />
+              <div class="field-label-col">
+                <span class="field-label">Max evaluations</span>
+                <span class="field-hint">Evaluations with digit images stored per meter</span>
+              </div>
+              <n-input-number v-model:value="draft.max_evals" :min="10" :max="10000" style="width: 110px;" />
             </div>
           </div>
         </n-card>
 
         <!-- Actions -->
-        <n-flex justify="flex-end" :size="8">
+        <div class="action-row">
           <n-button round :loading="saving" type="primary" @click="save">Save</n-button>
           <n-button round :loading="restarting" @click="saveAndRestart">
             <template #icon><n-icon><RefreshOutlined /></n-icon></template>
             Save &amp; Apply MQTT
           </n-button>
-        </n-flex>
+        </div>
 
-      </n-flex>
+      </div>
     </n-spin>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { NCard, NFlex, NInput, NInputNumber, NButton, NIcon, NTooltip, NSpin, useMessage } from 'naive-ui';
-import { HomeOutlined, HelpOutlineOutlined, RefreshOutlined } from '@vicons/material';
+import { NCard, NDivider, NInput, NInputNumber, NButton, NIcon, NSpin, useMessage } from 'naive-ui';
+import { HomeOutlined, RefreshOutlined, WifiOutlined, StorageOutlined } from '@vicons/material';
 import { apiService } from '@/services/api';
 
 const message = useMessage();
@@ -106,7 +99,7 @@ const loading = ref(true);
 const saving = ref(false);
 const restarting = ref(false);
 const fetchingSupervisor = ref(false);
-const supervisorAvailable = ref(null); // null = unknown, true = available, false = not available
+const supervisorAvailable = ref(null);
 
 const draft = ref({
   mqtt_broker: '',
@@ -196,25 +189,33 @@ onMounted(load);
 
 <style scoped>
 .settings-view {
-  max-width: 600px;
+  max-width: 480px;
 }
 
-.section-title {
-  text-transform: uppercase;
-  width: 100%;
-  background-color: rgba(125, 125, 125, 0.1);
-  text-align: center;
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  padding: 4px 0;
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-card {
+  border-radius: 12px !important;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 .fields {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-top: 14px;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 .field-row {
@@ -222,12 +223,36 @@ onMounted(load);
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-height: 28px;
 }
 
 .field-label {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
   flex-shrink: 0;
+}
+
+.field-label-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.field-hint {
+  font-size: 11px;
+  opacity: 0.45;
+}
+
+.ha-autofill {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.action-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 </style>
