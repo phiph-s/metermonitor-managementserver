@@ -402,74 +402,45 @@ def apply_sdkconfig(config_values: dict):
         f.writelines(new_sc)
 
 
-async def _get_idf_env() -> tuple[dict, str]:
-    """
-    Return (env_dict, idf_py_path) with the full ESP-IDF environment sourced.
-    Looks for IDF_PATH in the process environment or common install locations.
-    Sources export.sh so the xtensa toolchain ends up in PATH.
-    """
+def _find_idf_path() -> str:
     candidates = [
         os.environ.get("IDF_PATH", ""),
         "/opt/esp-idf",
         os.path.expanduser("~/esp/esp-idf"),
         os.path.expanduser("~/.espressif/esp-idf"),
     ]
-
-    idf_path = next((p for p in candidates if p and os.path.isfile(os.path.join(p, "export.sh"))), "")
-
-    if not idf_path:
-        # Nothing found; return bare environment and let idf.py fail with a clear message
-        return os.environ.copy(), "idf.py"
-
-    export_sh = os.path.join(idf_path, "export.sh")
-
-    # Source export.sh in a bash subprocess and capture the resulting environment
-    proc = await asyncio.create_subprocess_shell(
-        f'. "{export_sh}" > /dev/null 2>&1 && env -0',
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-        executable="/bin/bash",
+    return next(
+        (p for p in candidates if p and os.path.isfile(os.path.join(p, "export.sh"))),
+        "",
     )
-    stdout, _ = await proc.communicate()
-
-    env: dict = {}
-    for entry in stdout.decode("utf-8", errors="replace").split("\0"):
-        if "=" in entry:
-            key, _, val = entry.partition("=")
-            env[key] = val
-
-    # Fallback: merge with current env so nothing critical is missing
-    merged = {**os.environ, **env}
-
-    idf_py = os.path.join(idf_path, "tools", "idf.py")
-    if not os.path.isfile(idf_py):
-        idf_py = "idf.py"
-
-    return merged, idf_py
 
 
 async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None]:
     apply_sdkconfig(config_values)
 
-    env, idf_cmd = await _get_idf_env()
-
-    if idf_cmd == "idf.py" and not os.path.isfile(idf_cmd):
+    idf_path = _find_idf_path()
+    if not idf_path:
         yield (
             "ERROR: ESP-IDF not found.\n"
-            "Set the IDF_PATH environment variable to your ESP-IDF installation directory,\n"
-            "or install it to ~/esp/esp-idf (see the documentation).\n"
+            "Set the IDF_PATH environment variable or install ESP-IDF to ~/esp/esp-idf.\n"
         )
         yield "__BUILD_FAILED__1__\n"
         return
 
+    export_sh = os.path.join(idf_path, "export.sh")
+    idf_py = os.path.join(idf_path, "tools", "idf.py")
+
+    # Source export.sh and run idf.py inside the same shell so the Python venv
+    # is fully active — capturing env via `env -0` doesn't reliably propagate it.
+    shell_cmd = f'. "{export_sh}" > /dev/null 2>&1 && python3 "{idf_py}" build'
+
     try:
-        proc = await asyncio.create_subprocess_exec(
-            idf_cmd,
-            "build",
+        proc = await asyncio.create_subprocess_shell(
+            shell_cmd,
             cwd=FIRMWARE_DIR,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            env=env,
+            executable="/bin/bash",
         )
         async for raw in proc.stdout:
             yield raw.decode("utf-8", errors="replace")
@@ -478,8 +449,8 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
             yield "__BUILD_SUCCESS__\n"
         else:
             yield f"__BUILD_FAILED__{proc.returncode}__\n"
-    except FileNotFoundError:
-        yield "ERROR: idf.py not found. Ensure ESP-IDF is installed and IDF_PATH is set.\n"
+    except Exception as e:
+        yield f"ERROR: {e}\n"
         yield "__BUILD_FAILED__1__\n"
 
 
