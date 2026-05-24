@@ -1,6 +1,6 @@
 <template>
-  <n-space vertical size="large" justify="center">
-    <n-layout>
+  <n-space size="large" justify="center">
+    <n-layout class="maincontainer">
       <n-layout-content content-style="padding: 24px;">
         <div class="app-header">
           <div class="header-bar">
@@ -264,6 +264,11 @@ onUnmounted(() => {
 
 </script>
 <style>
+
+.maincontainer{
+  width: 100%;
+  max-width: 1600px;
+}
 
 .apexcharts-tooltip {
   background: #f3f3f3;

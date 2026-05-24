@@ -1,5 +1,7 @@
+import glob
 import os
 import re
+import sys
 import asyncio
 import subprocess
 from typing import AsyncGenerator, Optional
@@ -415,6 +417,56 @@ def _find_idf_path() -> str:
     )
 
 
+async def _get_idf_build_env(idf_path: str) -> dict:
+    """
+    Run idf_tools.py export to obtain the exact environment that ESP-IDF needs.
+    idf_tools.py is a standalone script (no venv required) so we can run it with
+    the current Python interpreter.  It emits KEY=VALUE lines we parse into a dict.
+    """
+    idf_tools = os.path.join(idf_path, "tools", "idf_tools.py")
+    base_env = {**os.environ, "IDF_PATH": idf_path}
+
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, idf_tools, "export", "--format=key-value",
+        env=base_env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+
+    env = dict(base_env)
+    for line in stdout.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if key == "PATH":
+            val = val.replace("$PATH", os.environ.get("PATH", ""))
+        env[key.strip()] = val.strip()
+
+    return env
+
+
+def _find_idf_venv_python(env: dict) -> str:
+    """
+    Return the Python executable from the ESP-IDF virtualenv.
+    Prefers IDF_PYTHON_ENV_PATH from the env dict, falls back to a glob.
+    """
+    venv_root = env.get("IDF_PYTHON_ENV_PATH", "")
+    for candidate in (
+        os.path.join(venv_root, "bin", "python"),
+        os.path.join(venv_root, "bin", "python3"),
+    ):
+        if venv_root and os.path.isfile(candidate):
+            return candidate
+
+    # Fallback: glob for any ESP-IDF venv installed under ~/.espressif
+    matches = sorted(
+        glob.glob(os.path.expanduser("~/.espressif/python_env/idf*_env/bin/python"))
+    )
+    return matches[-1] if matches else sys.executable
+
+
 async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None]:
     apply_sdkconfig(config_values)
 
@@ -427,20 +479,21 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
         yield "__BUILD_FAILED__1__\n"
         return
 
-    export_sh = os.path.join(idf_path, "export.sh")
     idf_py = os.path.join(idf_path, "tools", "idf.py")
 
-    # Source export.sh and run idf.py inside the same shell so the Python venv
-    # is fully active — capturing env via `env -0` doesn't reliably propagate it.
-    shell_cmd = f'. "{export_sh}" > /dev/null 2>&1 && python3 "{idf_py}" build'
+    # Use idf_tools.py to get the full tool PATH, then run idf.py with the
+    # venv Python directly — sourcing export.sh in a subshell does not reliably
+    # propagate the venv activation into the child process.
+    env = await _get_idf_build_env(idf_path)
+    venv_python = _find_idf_venv_python(env)
 
     try:
-        proc = await asyncio.create_subprocess_shell(
-            shell_cmd,
+        proc = await asyncio.create_subprocess_exec(
+            venv_python, idf_py, "build",
             cwd=FIRMWARE_DIR,
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            executable="/bin/bash",
         )
         async for raw in proc.stdout:
             yield raw.decode("utf-8", errors="replace")
