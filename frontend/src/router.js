@@ -6,12 +6,18 @@ import SecretView from "@/views/SecretView.vue";
 import SetupView from "@/views/SetupView.vue";
 import MeterView from "@/views/MeterView.vue";
 import SettingsView from "@/views/SettingsView.vue";
+import FlashView from "@/views/FlashView.vue";
 
 const routes = [
   {
     path: '/',
     name: 'Discovery',
     component: DiscoveryView
+  },
+  {
+    path: '/flash',
+    name: 'Flash',
+    component: FlashView
   },
   {
     path: '/settings',

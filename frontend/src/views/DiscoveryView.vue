@@ -26,12 +26,7 @@
             </n-button>
           </n-flex>
         </div>
-        <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true" style="margin-left: 20px;">
-          <div class="add-card-inner">
-            <n-icon><AddOutlined /></n-icon>
-            <span>Add meter</span>
-          </div>
-        </div>
+        <AddMeterButton @click-add="showAddSource = true" @click-flash="router.push('/flash')"/>
       </n-flex>
       <n-divider />
       <MQTTSetupHelper :config="config"/>
@@ -91,35 +86,26 @@
           :source_type="item[10]"
           @removed="getData"
       />
-      <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true">
-        <div class="add-card-inner">
-          <n-icon><AddOutlined /></n-icon>
-          <span>Add meter</span>
-        </div>
-      </div>
+      <AddMeterButton @click-add="showAddSource = true" @click-flash="router.push('/flash')"/>
     </n-flex>
   </template>
   <n-flex class="watermeters-row" v-else-if="discoveredMeters.length !== 0 && waterMeters.length === 0 && config">
-    <div class="add-card" data-testid="add-watermeter-card" @click="showAddSource = true" >
-      <div class="add-card-inner">
-        <n-icon><AddOutlined /></n-icon>
-        <span>Add meter</span>
-      </div>
-    </div>
+    <AddMeterButton @click-add="showAddSource = true" @click-flash="router.push('/flash')"/>
   </n-flex>
 
 </template>
 
 <script setup>
-import {onMounted, onUnmounted, ref, computed, watch} from 'vue';
+import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
 import {NButton, NDivider, NFlex, NH2, NIcon, NSpace} from 'naive-ui';
 import router from "@/router";
 import WaterMeterCard from "@/components/WaterMeterCard.vue";
 import AddSourceDialog from "@/components/AddSourceDialog.vue";
 import {useHeaderControls} from '@/composables/headerControls';
-import {AddOutlined, PendingActionsOutlined} from '@vicons/material';
+import {PendingActionsOutlined} from '@vicons/material';
 import MQTTSetupHelper from "@/views/MQTTSetupHelper.vue";
-import { meterTypeColors, meterTypeLabels, METER_TYPES } from '@/utils/meterTypeMeta';
+import {METER_TYPES, meterTypeColors, meterTypeLabels} from '@/utils/meterTypeMeta';
+import AddMeterButton from "@/views/AddMeterButton.vue";
 
 const discoveredMeters = ref([]);
 const waterMeters = ref([]);

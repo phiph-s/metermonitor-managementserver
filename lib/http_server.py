@@ -31,6 +31,15 @@ from starlette.responses import JSONResponse, FileResponse, StreamingResponse
 
 from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits, publish_registration, compute_daily_avg
 from lib.ha_flash_suggestion import suggest_flash_entity
+from lib.flash_handler import (
+    clone_or_pull_firmware,
+    firmware_exists,
+    get_kconfig_options,
+    read_current_sdkconfig,
+    build_firmware_stream,
+    get_flash_args,
+    FIRMWARE_DIR,
+)
 from lib.model_singleton import get_meter_predictor
 from lib.global_alerts import get_alerts, add_alert, remove_alert, set_change_callback
 from lib.ha_auth import get_ha_token, add_ha_auth_header
@@ -1875,6 +1884,64 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
             }
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Failed to fetch supervisor MQTT credentials: {e}")
+
+    # --- Flash device endpoints ---
+
+    class FlashBuildRequest(BaseModel):
+        config: dict
+
+    @app.post("/api/flash/prepare", dependencies=[Depends(authenticate)])
+    async def flash_prepare():
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, clone_or_pull_firmware)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/flash/kconfig", dependencies=[Depends(authenticate)])
+    def flash_kconfig():
+        if not firmware_exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Firmware not cloned yet. Call /api/flash/prepare first.",
+            )
+        try:
+            options = get_kconfig_options()
+            current_values = read_current_sdkconfig()
+            return {"options": options, "current_values": current_values}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/flash/build", dependencies=[Depends(authenticate)])
+    async def flash_build(req: FlashBuildRequest):
+        if not firmware_exists():
+            raise HTTPException(status_code=404, detail="Firmware not cloned yet.")
+
+        async def _stream():
+            async for chunk in build_firmware_stream(req.config):
+                yield chunk
+
+        return StreamingResponse(_stream(), media_type="text/plain")
+
+    @app.get("/api/flash/flash-args", dependencies=[Depends(authenticate)])
+    def flash_get_flash_args():
+        try:
+            return get_flash_args()
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/flash/binaries/{filepath:path}", dependencies=[Depends(authenticate)])
+    def flash_binary(filepath: str):
+        build_dir = os.path.normpath(os.path.join(FIRMWARE_DIR, "build"))
+        target = os.path.normpath(os.path.join(build_dir, filepath))
+        if not target.startswith(build_dir + os.sep) and target != build_dir:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if not os.path.isfile(target):
+            raise HTTPException(status_code=404, detail="Binary not found")
+        return FileResponse(target, media_type="application/octet-stream")
 
     @app.get("/")
     async def serve_index():

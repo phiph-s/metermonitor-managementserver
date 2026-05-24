@@ -29,16 +29,35 @@ FROM python:3.12-slim-bookworm
 
 WORKDIR /docker-app
 
-# 1. Copy python requirements first to leverage cache
-COPY requirements.txt .
-
-# 2. Install Python requirements with cache mount
-# Added build-base for compiling potential C-extensions
+# 1. Install system dependencies:
+#    - build-essential: for Python C extensions
+#    - ESP-IDF prerequisites: git, cmake, ninja-build, flex, bison, gperf, ccache,
+#      dfu-util, libusb-1.0-0, python3-venv (needed by ESP-IDF's own venv)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,target=/root/.cache/pip \
-    apt-get update && apt-get install -y --no-install-recommends build-essential \
-    && pip install --no-cache-dir -r requirements.txt \
+    apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git cmake ninja-build flex bison gperf ccache \
+    dfu-util libusb-1.0-0 python3-venv
+
+# 2. Install ESP-IDF (shallow clone, esp32 target only)
+#    Change IDF_VERSION to pin a specific release, e.g. v5.3.2
+ARG IDF_VERSION=v5.4.1
+ENV IDF_PATH=/opt/esp-idf
+
+RUN --mount=type=cache,target=/root/.espressif \
+    git clone --depth=1 --branch ${IDF_VERSION} --recurse-submodules \
+        https://github.com/espressif/esp-idf.git ${IDF_PATH} \
+    && cd ${IDF_PATH} \
+    && ./install.sh esp32 \
+    && rm -rf ${IDF_PATH}/.git
+
+# 3. Copy python requirements first to leverage cache
+COPY requirements.txt .
+
+# 4. Install Python requirements
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt \
     && apt-get purge -y --auto-remove build-essential \
     && rm -rf /var/lib/apt/lists/*
 

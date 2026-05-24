@@ -12,7 +12,9 @@
     "test:component:watch": "vitest"
   },
   "dependencies": {
+    "esptool-js": "^0.6.0",
     "@vicons/material": "^0.13.0",
+    "@vicons/ionicons5": "^0.13.0",
     "apexcharts": "^4.4.0",
     "naive-ui": "^2.41.0",
     "pinia": "^3.0.4",
