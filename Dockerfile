@@ -6,11 +6,9 @@
 FROM --platform=$BUILDPLATFORM node:18-alpine AS frontend-builder
 
 WORKDIR /frontend
-
 COPY frontend/package.json frontend/yarn.lock ./
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
     yarn install --frozen-lockfile
-
 COPY frontend/ ./
 COPY config.json ./config.json
 RUN yarn build
@@ -18,8 +16,7 @@ RUN yarn build
 ####################################
 # ESP-IDF Base Stage
 #
-# Isolated so Docker only re-runs this when IDF_VERSION changes.
-# For cross-machine caching, push this stage and use --cache-from:
+# Only rebuilds when IDF_VERSION changes. For cross-machine cache sharing:
 #   docker build --target idf-base -t registry/mm-idf-base:v5.4.1 .
 #   docker push registry/mm-idf-base:v5.4.1
 #   docker build --cache-from registry/mm-idf-base:v5.4.1 .
@@ -35,13 +32,30 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     git cmake ninja-build flex bison gperf ccache \
     dfu-util libusb-1.0-0 python3-venv
 
-# Tools are installed to /root/.espressif — no cache mount here so they
-# land in the image layer and are available at runtime.
-RUN git clone --depth=1 --branch ${IDF_VERSION} --recurse-submodules \
+# --shallow-submodules makes submodule clones shallow too (--depth alone doesn't).
+# Everything is cleaned up in the same RUN so deleted bytes never land in a layer.
+RUN git clone --depth=1 --shallow-submodules --branch ${IDF_VERSION} \
+        --recurse-submodules \
         https://github.com/espressif/esp-idf.git ${IDF_PATH} \
     && cd ${IDF_PATH} \
     && ./install.sh esp32 \
-    && rm -rf ${IDF_PATH}/.git
+    \
+    # ── strip tools not needed for compilation ─────────────────────────────
+    # Debuggers and JTAG interface
+    && rm -rf /root/.espressif/tools/openocd-esp32 \
+    && rm -rf /root/.espressif/tools/xtensa-esp-elf-gdb \
+    && rm -rf /root/.espressif/tools/riscv32-esp-elf-gdb \
+    # RISC-V compiler (ESP32 classic uses Xtensa only)
+    && rm -rf /root/.espressif/tools/riscv32-esp-elf \
+    # Downloaded archives – already extracted, not needed at runtime
+    && rm -rf /root/.espressif/dist \
+    \
+    # ── strip IDF source content not needed at runtime ─────────────────────
+    && rm -rf ${IDF_PATH}/.git \
+    && rm -rf ${IDF_PATH}/examples \
+    && rm -rf ${IDF_PATH}/docs \
+    && find ${IDF_PATH}/components -type d \( -name "test" -o -name "test_apps" \) \
+         -exec rm -rf {} + 2>/dev/null || true
 
 ####################################
 # Final Runtime Stage
@@ -50,11 +64,10 @@ FROM idf-base
 
 WORKDIR /docker-app
 
-# build-essential is only needed to compile Python C extensions
+# build-essential only needed to compile Python C extensions; purged afterwards
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    build-essential
+    apt-get update && apt-get install -y --no-install-recommends build-essential
 
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -66,5 +79,4 @@ COPY . .
 COPY --from=frontend-builder /frontend/dist /docker-app/frontend/dist
 
 EXPOSE 8070
-
 CMD ["python", "run.py", "--setup"]
