@@ -42,9 +42,31 @@
           <template #header>
             <n-flex align="center" justify="space-between">
               <span>MeterMonitor Configuration</span>
-              <n-text depth="3" style="font-size:12px;">
-                {{ kconfigOptions.length }} option(s) from Kconfig
-              </n-text>
+              <n-flex align="center" gap="8">
+                <n-text v-if="saveNotice" depth="2" style="font-size:12px;color:#18a058;">
+                  {{ saveNotice }}
+                </n-text>
+                <n-button
+                  v-if="hasSavedConfig"
+                  size="tiny"
+                  @click="loadSavedConfig"
+                >
+                  Load saved
+                </n-button>
+                <n-button
+                  size="tiny"
+                  type="primary"
+                  :disabled="kconfigOptions.length === 0"
+                  @click="saveConfig"
+                >
+                  Save for later
+                </n-button>
+                <n-divider vertical style="height:16px;margin:0 2px;" />
+                <n-flex align="center" gap="4">
+                  <n-switch v-model:value="advancedMode" size="small" />
+                  <n-text depth="3" style="font-size:12px;">Advanced</n-text>
+                </n-flex>
+              </n-flex>
             </n-flex>
           </template>
 
@@ -226,7 +248,7 @@ import {
   NCard, NButton, NSpace, NFlex, NSteps, NStep,
   NInput, NInputNumber, NSwitch, NEmpty, NAlert, NProgress,
   NIcon, NTooltip, NText, NSpin, NTag, NCollapse, NCollapseItem,
-  NSelect,
+  NSelect, NDivider,
 } from 'naive-ui';
 import {
   CheckCircleOutlined,
@@ -249,14 +271,14 @@ const FIRMWARE_DIR = '/tmp/metermonitor-esp';
 const host = import.meta.env.VITE_HOST || '';
 
 const SECTION_DEFS = [
-  { key: 'Board',    label: 'Board',         pattern: /BOARD/i },
-  { key: 'General',  label: 'General',        pattern: /INTERVAL|METER_NAME|DEVICE_NAME/i },
-  { key: 'WiFi',     label: 'WiFi',           pattern: /WIFI|SSID/i },
-  { key: 'MQTT',     label: 'MQTT',           pattern: /MQTT|BROKER/i },
-  { key: 'Time',     label: 'Time / SNTP',    pattern: /SNTP|NTP|TIME/i },
-  { key: 'Camera',   label: 'Camera',         pattern: /CAMERA|FRAME|RESOL/i },
+  { key: 'Board',    label: 'Board',          pattern: /BOARD/i },
+  { key: 'General',  label: 'General',         pattern: /INTERVAL|_NAME$|UNIQUE|IDENTIFYING|DEVICE_NAME|METER_NAME/i },
+  { key: 'WiFi',     label: 'WiFi',            pattern: /WIFI|SSID/i },
+  { key: 'MQTT',     label: 'MQTT',            pattern: /MQTT|BROKER/i },
+  { key: 'Time',     label: 'Time / SNTP',     pattern: /SNTP|NTP|TIME/i },
+  { key: 'Camera',   label: 'Camera',          pattern: /CAMERA|FRAME|RESOL/i },
   { key: 'Hardware', label: 'Hardware / GPIO', pattern: /GPIO|PIN|FLASH|LED_STRIP|DONE/i },
-  { key: 'Other',    label: 'Other',          pattern: /.*/ },  // catch-all
+  { key: 'Other',    label: 'Other',           pattern: /.*/ },  // catch-all
 ];
 
 const SECTION_ORDER = SECTION_DEFS.map(d => d.key);
@@ -271,6 +293,16 @@ const SECTION_ICONS = {
   Hardware: BuildOutlined,
   Other:    SettingsOutlined,
 };
+
+const ADVANCED_ONLY = new Set([
+  'METER_MONITOR_WIFI_MAXIMUM_RETRY',
+  'METER_MONITOR_DONE',
+  'METER_MONITOR_DONE_GPIO',
+  'METER_MONITOR_FLASH_GPIO',
+  'METER_MONITOR_LED_STRIP',
+  'METER_MONITOR_SNTP_TIME_SERVER',
+  'METER_MONITOR_SNTP_TIME_SYNC_ALWAYS',
+]);
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
 
@@ -289,9 +321,37 @@ const prepareError = ref('');
 
 // ── Step 2 ─────────────────────────────────────────────────────────────────────
 
+const SAVED_CONFIG_KEY = 'mm_flash_device_config';
+
+const advancedMode = ref(false);
 const loadingKconfig = ref(false);
 const kconfigOptions = ref([]);   // raw options from backend
 const configValues = ref({});     // form values (choice stored as selected name)
+const hasSavedConfig = ref(!!localStorage.getItem(SAVED_CONFIG_KEY));
+const saveNotice = ref('');
+
+function saveConfig() {
+  localStorage.setItem(SAVED_CONFIG_KEY, JSON.stringify(configValues.value));
+  hasSavedConfig.value = true;
+  saveNotice.value = 'Saved!';
+  setTimeout(() => { saveNotice.value = ''; }, 1800);
+}
+
+function loadSavedConfig() {
+  const raw = localStorage.getItem(SAVED_CONFIG_KEY);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw);
+    // Merge: only overwrite keys that exist in current form
+    const next = { ...configValues.value };
+    for (const [k, v] of Object.entries(saved)) {
+      if (k in next) next[k] = v;
+    }
+    configValues.value = next;
+    saveNotice.value = 'Loaded!';
+    setTimeout(() => { saveNotice.value = ''; }, 1800);
+  } catch { /* ignore malformed storage */ }
+}
 
 // ── Step 3 ─────────────────────────────────────────────────────────────────────
 
@@ -389,9 +449,11 @@ function evaluateDepends(expr, flat) {
 
 const optionsBySection = computed(() => {
   const flat = resolvedFlat.value;
+  const advanced = advancedMode.value;
   const buckets = {};
   for (const opt of kconfigOptions.value) {
     if (!evaluateDepends(opt.depends_on, flat)) continue;
+    if (!advanced && ADVANCED_ONLY.has(opt.name)) continue;
     const key = getSection(opt.name);
     if (!buckets[key]) buckets[key] = [];
     buckets[key].push(opt);
@@ -407,13 +469,18 @@ function isPassword(opt) {
   return opt.type === 'string' && /PASS(WORD|WD)?|SECRET/i.test(opt.name);
 }
 
+function toNumber(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
+
 function defaultForOpt(opt) {
   if (opt.type === 'choice') {
     return opt.default ?? (opt.choices[0]?.name ?? null);
   }
-  if (opt.default !== null && opt.default !== undefined) return opt.default;
+  if (opt.default !== null && opt.default !== undefined) {
+    if (opt.type === 'int' || opt.type === 'hex') return toNumber(opt.default);
+    return opt.default;
+  }
   if (opt.type === 'bool') return false;
-  if (opt.type === 'int') return 0;
+  if (opt.type === 'int' || opt.type === 'hex') return 0;
   return '';
 }
 
@@ -421,11 +488,17 @@ function initConfigValues(options, savedValues) {
   const vals = {};
   for (const opt of options) {
     if (opt.type === 'choice') {
-      // Find which choice sub-option is currently enabled in sdkconfig
       const active = opt.choices.find(c => savedValues[c.name] === true);
       vals[opt.name] = active ? active.name : defaultForOpt(opt);
+    } else if (opt.name in savedValues) {
+      const raw = savedValues[opt.name];
+      if (opt.type === 'int' || opt.type === 'hex') {
+        vals[opt.name] = toNumber(raw);
+      } else {
+        vals[opt.name] = raw;
+      }
     } else {
-      vals[opt.name] = (opt.name in savedValues) ? savedValues[opt.name] : defaultForOpt(opt);
+      vals[opt.name] = defaultForOpt(opt);
     }
   }
   return vals;

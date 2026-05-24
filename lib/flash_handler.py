@@ -82,6 +82,10 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
     def flush_regular():
         nonlocal current
         if current:
+            # Skip internal options with no user-visible prompt
+            if current["label"] is None:
+                current = None
+                return
             current["help"] = current["help"].strip()
             options.append(current)
             current = None
@@ -122,7 +126,9 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
     while i < len(lines) and depth > 0:
         line = lines[i]
         stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
+        # Expand tabs before computing indent to handle mixed tab/space indentation
+        _expanded = line.expandtabs(4)
+        indent = len(_expanded) - len(_expanded.lstrip())
 
         if stripped.startswith("menu ") and not stripped.startswith("menuconfig"):
             depth += 1
@@ -170,6 +176,11 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
                     if m:
                         in_choice["label"] = m.group(1)
 
+                    # Accept `bool/string/int/hex "label"` as the choice's prompt
+                    m = re.match(r'(?:bool|int|hex|string)\s+"([^"]+)"', stripped)
+                    if m and choice_item is None:
+                        in_choice["label"] = m.group(1)
+
                     m = re.match(r"default\s+(\S.*)", stripped)
                     if m and not stripped.startswith("config "):
                         in_choice["default"] = _parse_default(m.group(1))
@@ -193,6 +204,10 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
                         if stripped in ("help", "---help---"):
                             in_help = True
                             help_indent = indent
+                    elif stripped in ("help", "---help---"):
+                        # help text for the choice block itself
+                        in_help = True
+                        help_indent = indent
 
                 else:
                     # ── regular config ─────────────────────────────────────
@@ -202,7 +217,7 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
                         current = {
                             "name": name,
                             "type": "string",
-                            "label": name.replace("_", " ").title(),
+                            "label": None,   # None until an explicit prompt is found
                             "default": None,
                             "help": "",
                             "depends_on": None,
@@ -216,6 +231,10 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
                                 if m.group(1):
                                     current["label"] = m.group(1)
                                 break
+
+                        m = re.match(r'prompt\s+"([^"]+)"', stripped)
+                        if m:
+                            current["label"] = m.group(1)
 
                         m = re.match(r"default\s+(.*)", stripped)
                         if m:
@@ -241,16 +260,39 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
 
 
 def get_kconfig_options(target_menu: str = "MeterMonitor") -> list:
+    """
+    Collect options from every Kconfig file that contains the target menu.
+    main/Kconfig.projbuild is checked first (it's the standard home for
+    project-level ESP-IDF configuration such as WiFi / MQTT / camera settings).
+    Options from later files only fill in names not yet seen.
+    """
+    seen: set = set()
+    merged: list = []
+
+    # Build ordered list: main/Kconfig.projbuild first, then everything else
+    primary = os.path.join(FIRMWARE_DIR, "main", "Kconfig.projbuild")
+    ordered = []
+    if os.path.isfile(primary):
+        ordered.append(primary)
     for kpath in _find_kconfig_files(FIRMWARE_DIR):
+        if kpath != primary:
+            ordered.append(kpath)
+
+    for kpath in ordered:
         try:
             with open(kpath) as f:
                 content = f.read()
         except OSError:
             continue
         opts = _parse_kconfig_content(content, target_menu)
-        if opts is not None:
-            return opts
-    return []
+        if opts is None:
+            continue
+        for opt in opts:
+            if opt["name"] not in seen:
+                seen.add(opt["name"])
+                merged.append(opt)
+
+    return merged
 
 
 def read_current_sdkconfig() -> dict:
