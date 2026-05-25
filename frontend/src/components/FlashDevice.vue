@@ -378,7 +378,7 @@ const BAUD_RATES = [
 ];
 
 const webSerialSupported = ref('serial' in navigator);
-const baudRate = ref(460800);
+const baudRate = ref(115200);
 const flashing = ref(false);
 const flashSuccess = ref(false);
 const flashError = ref('');
@@ -634,7 +634,7 @@ async function doFlash() {
       const resp = await fetch(`${host}api/flash/binaries/${bin.path}`, { headers: { secret: authStore.secret } });
       if (!resp.ok) throw new Error(`Failed to download ${bin.filename}: ${resp.status}`);
       const buf = await resp.arrayBuffer();
-      fileArray.push({ data: new TextDecoder('latin1').decode(buf), address: bin.offset });
+      fileArray.push({ data: new Uint8Array(buf), address: bin.offset });
     }
 
     flashLog_push('Initializing WebSerial...');
@@ -657,9 +657,11 @@ async function doFlash() {
 
     const total = fileArray.length;
     flashLog_push('Writing flash...');
-    await loader.write_flash({
+    await loader.writeFlash({
       fileArray,
-      flashSize: 'keep',
+      flashMode: flashArgs.flash_mode ?? 'keep',
+      flashFreq: flashArgs.flash_freq ?? 'keep',
+      flashSize: flashArgs.flash_size ?? 'keep',
       eraseAll: false,
       compress: true,
       reportProgress: (fileIndex, written, size) => {
