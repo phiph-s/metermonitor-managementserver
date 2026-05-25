@@ -605,6 +605,8 @@ async function doFlash() {
   flashProgress.value = 0;
   flashSuccess.value = false;
 
+  let transport = null;
+
   try {
     flashLog_push('Fetching flash configuration...');
     const flashArgs = await apiService.getJson('api/flash/flash-args');
@@ -623,7 +625,7 @@ async function doFlash() {
     flashLog_push('Initializing WebSerial...');
     const { ESPLoader, Transport } = await import('esptool-js');
     const port = await navigator.serial.requestPort();
-    const transport = new Transport(port, true);
+    transport = new Transport(port, true);
     const terminal = {
       clean: () => {},
       writeLine: (d) => flashLog_push(d),
@@ -653,8 +655,6 @@ async function doFlash() {
       calculateMD5Hash: () => '',
     });
 
-    flashLog_push('Resetting device...');
-    await transport.disconnect();
     flashProgress.value = 100;
     flashProgressLabel.value = 'Done!';
     flashSuccess.value = true;
@@ -664,6 +664,9 @@ async function doFlash() {
       flashLog_push(`Error: ${flashError.value}`);
     }
   } finally {
+    if (transport) {
+      try { await transport.disconnect(); } catch { /* ignore disconnect errors */ }
+    }
     flashing.value = false;
   }
 }
