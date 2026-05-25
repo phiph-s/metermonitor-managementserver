@@ -267,7 +267,7 @@ import { apiService } from '@/services/api.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const FIRMWARE_DIR = '/tmp/metermonitor-esp';
+const FIRMWARE_DIR = '/data/metermonitor-esp';
 const host = import.meta.env.VITE_HOST || '';
 
 const SECTION_DEFS = [
