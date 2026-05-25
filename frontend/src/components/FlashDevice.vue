@@ -220,12 +220,19 @@
               <li>Release once connected, then select the correct port</li>
             </ul>
           </n-alert>
-          <n-space v-if="!flashing && !flashSuccess">
+          <n-flex v-if="!flashing && !flashSuccess" align="center" gap="8">
             <n-button type="primary" :disabled="!webSerialSupported" @click="doFlash">
               Connect &amp; Flash
             </n-button>
+            <n-select
+              v-model:value="baudRate"
+              :options="BAUD_RATES"
+              size="small"
+              style="width:130px;"
+            />
+            <n-text depth="3" style="font-size:11px;">baud rate</n-text>
             <n-button @click="step = 3">← Back to Build</n-button>
-          </n-space>
+          </n-flex>
           <div v-if="flashProgress !== null" class="flash-progress">
             <n-progress type="line" :percentage="flashProgress" :height="10" :border-radius="5" :processing="flashing" />
             <span class="flash-progress-label">{{ flashProgressLabel }}</span>
@@ -363,7 +370,15 @@ const buildTerminalEl = ref(null);
 
 // ── Step 4 ─────────────────────────────────────────────────────────────────────
 
+const BAUD_RATES = [
+  { label: '921600', value: 921600 },
+  { label: '460800', value: 460800 },
+  { label: '230400', value: 230400 },
+  { label: '115200', value: 115200 },
+];
+
 const webSerialSupported = ref('serial' in navigator);
+const baudRate = ref(460800);
 const flashing = ref(false);
 const flashSuccess = ref(false);
 const flashError = ref('');
@@ -636,7 +651,7 @@ async function doFlash() {
     };
 
     flashLog_push('Connecting to device...');
-    const loader = new ESPLoader({ transport, baudrate: 921600, terminal });
+    const loader = new ESPLoader({ transport, baudrate: baudRate.value, terminal });
     const chip = await loader.main();
     flashLog_push(`Connected: ${chip}`);
 
