@@ -207,7 +207,10 @@ onMounted(load);
   border: 1px solid rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
-
+.light-mode .settings-card {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
 .card-header {
   display: flex;
   align-items: center;

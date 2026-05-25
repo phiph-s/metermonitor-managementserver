@@ -338,6 +338,16 @@ def read_current_sdkconfig() -> dict:
 
 def apply_sdkconfig(config_values: dict):
     """Write user values into sdkconfig.defaults, and patch sdkconfig if it exists."""
+    # Mirror MeterMonitor WiFi options into the ESP-IDF example connection component
+    # keys so that CONFIG_EXAMPLE_WIFI_SSID / _PASSWORD are compiled in correctly.
+    # The firmware's WiFi fallback reads those Kconfig symbols when NVS has no config.
+    merged = dict(config_values)
+    if "METER_MONITOR_WIFI_SSID" in merged and "EXAMPLE_WIFI_SSID" not in merged:
+        merged["EXAMPLE_WIFI_SSID"] = merged["METER_MONITOR_WIFI_SSID"]
+    if "METER_MONITOR_WIFI_PASSWORD" in merged and "EXAMPLE_WIFI_PASSWORD" not in merged:
+        merged["EXAMPLE_WIFI_PASSWORD"] = merged["METER_MONITOR_WIFI_PASSWORD"]
+    config_values = merged
+
     defaults_path = os.path.join(FIRMWARE_DIR, "sdkconfig.defaults")
     managed_keys = {f"CONFIG_{n}" for n in config_values}
 
