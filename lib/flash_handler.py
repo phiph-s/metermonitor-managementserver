@@ -602,6 +602,8 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
     # venv Python directly — sourcing export.sh in a subshell does not reliably
     # propagate the venv activation into the child process.
     env = await _get_idf_build_env(idf_path)
+    # Disable Python's own output buffering so idf.py flushes each line immediately.
+    env["PYTHONUNBUFFERED"] = "1"
     venv_python = _find_idf_venv_python(env)
 
     try:
@@ -612,8 +614,13 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        async for raw in proc.stdout:
-            yield raw.decode("utf-8", errors="replace")
+        # Read in small chunks rather than line-by-line so we get bytes as soon
+        # as they arrive even when the subprocess hasn't written a full newline yet.
+        while True:
+            chunk = await proc.stdout.read(512)
+            if not chunk:
+                break
+            yield chunk.decode("utf-8", errors="replace")
         await proc.wait()
         if proc.returncode == 0:
             yield "__BUILD_SUCCESS__\n"

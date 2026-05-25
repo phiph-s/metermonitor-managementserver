@@ -1922,7 +1922,14 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
             async for chunk in build_firmware_stream(req.config):
                 yield chunk
 
-        return StreamingResponse(_stream(), media_type="text/plain")
+        return StreamingResponse(
+            _stream(),
+            media_type="text/plain",
+            headers={
+                "X-Accel-Buffering": "no",   # disable Nginx/HA-ingress proxy buffering
+                "Cache-Control": "no-cache",
+            },
+        )
 
     @app.get("/api/flash/flash-args", dependencies=[Depends(authenticate)])
     def flash_get_flash_args():
