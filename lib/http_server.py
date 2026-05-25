@@ -1216,6 +1216,21 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
 
         daily_avg, yearly_avg, days_of_data = compute_daily_avg(rows)
 
+        # Median interval between consecutive history entries (seconds)
+        cursor.execute("""
+            SELECT AVG(diff) FROM (
+                SELECT diff FROM (
+                    SELECT (julianday(timestamp) - julianday(LAG(timestamp) OVER (ORDER BY timestamp))) * 86400.0 AS diff
+                    FROM history WHERE name = ?
+                ) WHERE diff IS NOT NULL
+                ORDER BY diff
+                LIMIT  2 - ((SELECT COUNT(*) FROM history WHERE name = ?) - 1) % 2
+                OFFSET ((SELECT COUNT(*) FROM history WHERE name = ?) - 2) / 2
+            )
+        """, (name, name, name))
+        row = cursor.fetchone()
+        median_interval = row[0] if row else None
+
         return {
             "today_consumption": today_consumption,
             "last_daily_date": last_daily_date,
@@ -1223,6 +1238,7 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
             "yearly_avg": yearly_avg,
             "extrapolated": days_of_data is not None and days_of_data < 365,
             "days_of_data": days_of_data,
+            "median_interval": median_interval,
         }
 
     @app.get("/api/watermeters/{name}", dependencies=[Depends(authenticate)])

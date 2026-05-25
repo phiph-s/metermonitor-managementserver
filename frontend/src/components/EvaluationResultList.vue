@@ -1,115 +1,111 @@
 <template>
-  <div ref="scrollRoot" class="bglight eval-list">
+  <div ref="scrollRoot" class="eval-list">
     <div v-if="evaluations.length === 0" style="padding: 20px; width: 100%; margin-top: 20%;">
-      <n-empty description="Waiting for the first images...">
-      </n-empty>
+      <n-empty description="Waiting for the first images..." />
     </div>
-    <n-flex v-else vertical align="start" :size="0">
-      <div
-        v-for="[i, evaluation] in evaluations.entries()"
-        :key="i"
-        :class="{ outdated: evaluation.outdated, rejected: !evaluation.total_confidence, item: true }"
-        @click="openDetailDialog(evaluation.id)"
-        style="cursor: pointer;"
-      >
-        <div
-          v-if="evaluation.outdated && !evaluations[i - 1]?.outdated"
-          class="outdated-separator"
-        >
-          Outdated - The setup configuration has changed since.
-          <n-icon size="16" style="margin-left: 4px;">
-            <ArrowDownwardOutlined />
-          </n-icon>
-        </div>
-        <n-flex :class="{ redbg: evaluation.result == null, econtainer: true }" vertical :size="0">
-          <n-flex align="center">
-            <div class="timestamp" :title="formattedTimestampAbsolute(evaluation.timestamp)">
-              {{ formattedTimestamp(evaluation.timestamp) }}
-            </div>
-            <div v-if="evaluation.result" class="corrected-block">
-              <div class="result-digits">
+
+    <table v-else class="eval-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Reading</th>
+          <th>Confidence</th>
+          <th>Digits</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template v-for="[i, evaluation] in evaluations.entries()" :key="i">
+          <tr v-if="evaluation.outdated && !evaluations[i - 1]?.outdated" class="outdated-separator-row">
+            <td colspan="5">
+              <span>Outdated — setup configuration has changed since</span>
+              <n-icon size="14" style="margin-left: 6px; vertical-align: middle;">
+                <ArrowDownwardOutlined />
+              </n-icon>
+            </td>
+          </tr>
+          <tr
+            :class="{ outdated: evaluation.outdated, rejected: !evaluation.total_confidence }"
+            class="eval-row"
+            @click="openDetailDialog(evaluation.id)"
+          >
+            <td class="td-time">
+              <span class="timestamp" :title="formattedTimestampAbsolute(evaluation.timestamp)">
+                {{ formattedTimestamp(evaluation.timestamp) }}
+              </span>
+            </td>
+            <td class="td-reading">
+              <div v-if="evaluation.result" class="result-digits">
                 <span
-                  v-for="[i, digit] in (evaluation.result + '').padStart(evaluation.th_digits.length, '0').split('').entries()"
-                  :key="i + 'f'"
+                  v-for="[j, digit] in (evaluation.result + '').padStart(evaluation.th_digits.length, '0').split('').entries()"
+                  :key="j + 'f'"
                   :class="{
                     'google-sans-code': true,
                     adjustment: true,
-                    red: digit !== evaluation.predictions[i][0][0],
-                    blue: evaluation.predictions[i][0][0] === 'r',
-                    orange: evaluation.denied_digits[i] && evaluation.predictions[i][0][0] != digit
+                    red: digit !== evaluation.predictions[j][0][0],
+                    blue: evaluation.predictions[j][0][0] === 'r',
+                    orange: evaluation.denied_digits[j] && evaluation.predictions[j][0][0] != digit
                   }"
                 >
-                  <template v-if="isDecimalSeparatorIndex(i, evaluation.th_digits.length)">
-                    {{ digit }},
-                  </template>
-                  <template v-else>
-                    {{ digit }}
-                  </template>
+                  <template v-if="isDecimalSeparatorIndex(j, evaluation.th_digits.length)">{{ digit }},</template>
+                  <template v-else>{{ digit }}</template>
                 </span>
                 <span class="adjustment unit">{{ meterUnit }}</span>
               </div>
-            </div>
-
-            <template v-if="evaluation.total_confidence">
-              <span :style="{ color: getColor(evaluation.total_confidence) }">
+              <span v-else class="no-reading">—</span>
+            </td>
+            <td class="td-conf">
+              <span v-if="evaluation.total_confidence" :style="{ color: getColor(evaluation.total_confidence) }">
                 <b>{{ (evaluation.total_confidence * 100).toFixed(1) }}</b>%
               </span>
-            </template>
-            <div v-else class="rejected-label">
-              Rejected
-            </div>
-
-            <n-flex class="digit-groups" aria-label="Digits with prediction and confidence">
-              <div
-                v-for="(base64, j) in evaluation.th_digits_inverted"
-                :key="evaluation.id + '-' + j"
-                class="digit-group"
-              >
-                <img
-                  class="digit theme-revert"
-                  :src="'data:image/png;base64,' + base64"
-                  alt="Watermeter"
-                />
-                <div class="digit-meta">
-                  <n-tooltip>
-                    <template #trigger>
-                      <span class="digit-pred">
-                        {{ (evaluation.predictions[j]?.[0]?.[0] === 'r') ? '↕' : evaluation.predictions[j]?.[0]?.[0] }}
+              <span v-else class="rejected-label">Rejected</span>
+            </td>
+            <td class="td-digits">
+              <div class="digit-groups" aria-label="Digits with prediction and confidence">
+                <div
+                  v-for="(base64, j) in evaluation.th_digits_inverted"
+                  :key="evaluation.id + '-' + j"
+                  class="digit-group"
+                >
+                  <img class="digit theme-revert" :src="'data:image/png;base64,' + base64" alt="digit" />
+                  <div class="digit-meta">
+                    <n-tooltip>
+                      <template #trigger>
+                        <span class="digit-pred">
+                          {{ evaluation.predictions[j]?.[0]?.[0] === 'r' ? '↕' : evaluation.predictions[j]?.[0]?.[0] }}
+                        </span>
+                      </template>
+                      <span v-if="evaluation.predictions[j]">
+                        {{ evaluation.predictions[j][1][0] === 'r' ? '↕' : evaluation.predictions[j][1][0] }}: {{ (evaluation.predictions[j][1][1] * 100).toFixed(1) }}%<br>
+                        {{ evaluation.predictions[j][2][0] === 'r' ? '↕' : evaluation.predictions[j][2][0] }}: {{ (evaluation.predictions[j][2][1] * 100).toFixed(1) }}%
                       </span>
-                    </template>
-                    <span v-if="evaluation.predictions[j]">
-                      {{ (evaluation.predictions[j][1][0] === 'r') ? '↕' : evaluation.predictions[j][1][0] }}: {{ (evaluation.predictions[j][1][1] * 100).toFixed(1) }}%<br>
-                      {{ (evaluation.predictions[j][2][0] === 'r') ? '↕' : evaluation.predictions[j][2][0] }}: {{ (evaluation.predictions[j][2][1] * 100).toFixed(1) }}%
+                    </n-tooltip>
+                    <span
+                      class="digit-conf"
+                      :style="{ color: getColor(evaluation.predictions[j]?.[0]?.[1] || 0), textDecoration: evaluation.denied_digits[j] ? 'line-through' : 'none' }"
+                    >
+                      {{ evaluation.predictions[j] ? Math.round(evaluation.predictions[j][0][1] * 100) : '--' }}
                     </span>
-                  </n-tooltip>
-                  <span
-                    class="digit-conf"
-                    :style="{ color: getColor(evaluation.predictions[j]?.[0]?.[1] || 0), textDecoration: evaluation.denied_digits[j]? 'line-through' : 'none' }"
-                  >
-                    {{ evaluation.predictions[j] ? Math.round(evaluation.predictions[j][0][1] * 100) : '--' }}
-                  </span>
+                  </div>
                 </div>
               </div>
-            </n-flex>
-
-            <n-button
-              size="small"
-              quaternary
-              circle
-              @click.stop="openUploadDialog(evaluation.colored_digits, evaluation.th_digits, name, evaluation.predictions)"
-            >
-              <template #icon>
-                <n-icon><ArchiveOutlined /></n-icon>
-              </template>
-            </n-button>
-
-          </n-flex>
-        </n-flex>
-      </div>
-      <div ref="sentinel" class="scroll-sentinel">
-        <span v-if="loadingMore" class="loading-hint">Loading more...</span>
-      </div>
-    </n-flex>
+            </td>
+            <td class="td-action" @click.stop>
+              <n-button size="small" quaternary circle
+                @click="openUploadDialog(evaluation.colored_digits, evaluation.th_digits, name, evaluation.predictions)"
+              >
+                <template #icon><n-icon><ArchiveOutlined /></n-icon></template>
+              </n-button>
+            </td>
+          </tr>
+        </template>
+        <tr v-if="hasMore" ref="sentinel" class="scroll-sentinel-row">
+          <td colspan="5">
+            <span v-if="loadingMore" class="loading-hint">Loading more...</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
 
     <EvaluationDetailDialog
       v-model:show="showDetailDialog"
@@ -158,6 +154,10 @@ const props = defineProps({
   unit: {
     type: String,
     default: null
+  },
+  hasMore: {
+    type: Boolean,
+    default: true
   }
 });
 
@@ -285,91 +285,110 @@ watch(
   height: 100%;
   overflow-y: auto;
   overflow-x: auto;
-  padding: 0;
-  width: fit-content;
-  max-width: 100%;
 }
 
-.item {
-  position: relative;
-  width: fit-content;
+/* ── Table layout ── */
+.eval-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
 }
 
-.item.outdated .econtainer {
-  border-left: 4px solid rgba(255, 180, 70, 0.9);
-  background: rgba(255, 190, 90, 0.08);
+thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--n-color, #1a1a1a);
 }
 
-.item.rejected .econtainer {
-  border-left: 4px solid rgba(255, 80, 80, 0.95);
-  background: rgba(255, 80, 80, 0.12);
+.light-mode thead tr {
+  background: #f5f5f5;
 }
 
-.rejected-label {
-  color: #ff6b6b;
-  font-size: 20px;
+thead th {
+  padding: 8px 14px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.5;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.outdated-separator {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.light-mode thead th {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* ── Body rows ── */
+.eval-row {
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.1s;
+}
+
+.light-mode .eval-row {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.eval-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.light-mode .eval-row:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.eval-row.outdated {
+  border-left: 3px solid rgba(255, 180, 70, 0.8);
+  background: rgba(255, 190, 90, 0.05);
+}
+
+.eval-row.rejected {
+  border-left: 3px solid rgba(255, 80, 80, 0.9);
+  background: rgba(255, 80, 80, 0.07);
+}
+
+.eval-row td {
   padding: 10px 14px;
+  vertical-align: middle;
+}
+
+/* ── Outdated separator row ── */
+.outdated-separator-row td {
+  padding: 7px 14px;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.18em;
   color: rgba(255, 180, 80, 0.9);
   background: rgba(255, 190, 90, 0.08);
-  border-top: 1px solid rgba(255, 180, 70, 0.4);
-  border-bottom: 1px solid rgba(255, 180, 70, 0.4);
+  border-top: 1px solid rgba(255, 180, 70, 0.3);
+  border-bottom: 1px solid rgba(255, 180, 70, 0.3);
 }
 
-.light-mode .outdated-separator {
+.light-mode .outdated-separator-row td {
   color: rgba(150, 85, 0, 0.9);
-  background: rgba(255, 190, 90, 0.2);
-  border-top: 1px solid rgba(180, 110, 30, 0.25);
-  border-bottom: 1px solid rgba(180, 110, 30, 0.25);
+  background: rgba(255, 190, 90, 0.18);
+  border-color: rgba(180, 110, 30, 0.25);
 }
 
-.scroll-sentinel {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  padding: 14px 0 10px;
-  opacity: 0.5;
-  min-height: 32px;
+/* ── Sentinel / loading ── */
+.scroll-sentinel-row td {
+  padding: 14px;
+  text-align: center;
 }
 
 .loading-hint {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
+  opacity: 0.5;
 }
 
-.list-row {
-  display: grid;
-  grid-template-columns: 200px 140px auto 48px;
-  column-gap: 8px;
-  row-gap: 6px;
-  width: 100%;
-  align-items: center;
-  justify-items: start;
-  justify-content: start;
-}
-
-.cell {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-}
-
-.meta-cell {
-  gap: 8px;
-  align-items: flex-start;
+/* ── Cell content ── */
+.td-time {
+  white-space: nowrap;
 }
 
 .timestamp {
@@ -380,102 +399,23 @@ watch(
   opacity: 0.8;
 }
 
-.conf-cell .conf-values {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 18px;
+.td-reading {
+  white-space: nowrap;
 }
 
-.conf-primary {
-  font-size: 20px;
-}
-
-.conf-secondary {
-  font-size: 12px;
-  opacity: 0.7;
-  cursor: help;
-}
-
-.digits-cell {
-  justify-content: flex-start;
-}
-
-.digit {
-  height: 32px;
-  mix-blend-mode: screen;
-}
-
-.label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  opacity: 0.55;
-}
-
-.digit-groups {
-}
-
-.digit-group {
-  display: grid;
-  grid-template-columns: auto;
-  grid-template-rows: auto auto;
-  justify-items: center;
-  align-items: center;
-  gap: 2px;
-  padding: 0;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  min-width: 48px;
-}
-
-.light-mode .digit-group {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.digit-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 0;
-  padding-top: 0px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-  width: 100%;
-  justify-content: center;
-}
-
-.light-mode .digit-meta {
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
-}
-
-.digit-pred {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.digit-conf {
-  font-size: 10px;
-  font-weight: 800;
-  padding-left: 6px;
-  margin-left: 6px;
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.light-mode .digit-conf {
-  border-left: 1px solid rgba(0, 0, 0, 0.2);
-}
-
-.corrected-block .result-digits {
+.result-digits {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: nowrap;
+}
+
+.no-reading {
+  opacity: 0.4;
 }
 
 .adjustment {
   font-size: 20px;
-  margin: 0;
   color: rgba(255, 255, 255, 0.7);
 }
 
@@ -487,55 +427,86 @@ watch(
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-left: 6px;
+  margin-left: 4px;
 }
 
-.action-cell {
-  align-items: flex-start;
-  justify-content: flex-start;
+.td-conf {
+  white-space: nowrap;
 }
 
-.red {
+.rejected-label {
   color: #ff6b6b;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.blue {
-  color: #3aa0ff;
+.td-digits {
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
-.orange {
-  color: #ffb45a;
+.digit-groups {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
 }
 
-@media (max-width: 1400px) {
-  .list-row {
-    grid-template-columns: 190px 130px minmax(300px, 1fr) 40px;
-  }
+.digit-group {
+  display: grid;
+  grid-template-rows: auto auto;
+  justify-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 44px;
+  overflow: hidden;
 }
 
-@media (max-width: 1100px) {
-  .list-row {
-    grid-template-columns: 190px 140px minmax(240px, 1fr) 40px;
-    grid-auto-rows: auto;
-  }
+.light-mode .digit-group {
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-.econtainer {
-  width: fit-content;
-  padding: 16px 14px;
-  margin: 0;
-  border-radius: 0;
-  background-color: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  align-items: flex-start;
+.digit {
+  height: 32px;
+  mix-blend-mode: screen;
 }
 
-.light-mode .econtainer {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+.digit-meta {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  justify-content: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.redbg {
-  background-color: rgba(255, 0, 0, 0.05);
+.light-mode .digit-meta {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
 }
 
+.digit-pred {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.digit-conf {
+  font-size: 10px;
+  font-weight: 800;
+  padding-left: 5px;
+  margin-left: 5px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.light-mode .digit-conf {
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.td-action {
+  width: 40px;
+  text-align: center;
+}
+
+.red   { color: #ff6b6b; }
+.blue  { color: #3aa0ff; }
+.orange { color: #ffb45a; }
 </style>

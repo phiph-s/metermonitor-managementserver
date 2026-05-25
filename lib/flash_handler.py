@@ -3,6 +3,7 @@ import json
 import os
 import pty
 import re
+import shutil
 import sys
 import termios
 import asyncio
@@ -588,17 +589,44 @@ def _apply_idf_cmake_workarounds(idf_path: str) -> None:
         subprocess.run(cmd, capture_output=True)
 
 
-async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None]:
-    apply_sdkconfig(config_values)
+def _invalidate_build_artifacts() -> None:
+    """
+    Selectively remove build artefacts that must be regenerated whenever
+    sdkconfig values change.  Keeps the rest of the incremental build cache
+    intact so subsequent builds stay fast.
 
-    # Delete the cached sdkconfig.h so cmake regenerates it from the updated
-    # sdkconfig and recompiles all dependent files (e.g. configurations.c).
-    # Without this, the incremental build skips recompilation even when
-    # sdkconfig values change, because cmake's file-timestamp check may not
-    # detect the update.
-    sdkconfig_h = os.path.join(FIRMWARE_DIR, "build", "config", "sdkconfig.h")
+    - sdkconfig.h          : cmake's generated header; must match sdkconfig
+    - build/esp-idf/main/  : contains configurations.c.obj (embeds WiFi
+                             credentials read from sdkconfig at compile time)
+    - build/esp-idf/esp_app_format/ : contains esp_app_desc.c.obj which
+                             embeds __DATE__ / __TIME__; deleting it makes
+                             the compile timestamp in the firmware update on
+                             every build so changes are visually verifiable
+    - *.elf / *.bin / *.map : final binary artefacts; deleting them guarantees
+                             the linker re-runs and the fresh .bin is written
+    """
+    build_dir = os.path.join(FIRMWARE_DIR, "build")
+
+    sdkconfig_h = os.path.join(build_dir, "config", "sdkconfig.h")
     if os.path.exists(sdkconfig_h):
         os.remove(sdkconfig_h)
+
+    for component in ("main", "esp_app_format"):
+        comp_dir = os.path.join(build_dir, "esp-idf", component)
+        if os.path.isdir(comp_dir):
+            shutil.rmtree(comp_dir)
+
+    for pattern in ("*.elf", "*.bin", "*.map"):
+        for f in glob.glob(os.path.join(build_dir, pattern)):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
+
+async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None]:
+    apply_sdkconfig(config_values)
+    _invalidate_build_artifacts()
 
     idf_path = _find_idf_path()
     if not idf_path:

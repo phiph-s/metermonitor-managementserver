@@ -35,7 +35,7 @@
           </div>
         </div>
         <div v-else-if="evaluations !== null" style="padding-left: 10px; padding-right: 10px;">
-          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+          <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter" :has-more="hasMoreEvaluations"/>
         </div>
       </n-tab-pane>
       <n-tab-pane name="evaluations" tab="Statistics">
@@ -85,7 +85,7 @@
             </div>
           </main>
           <main class="meter-content" v-else-if="evaluations !== null">
-            <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+            <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter" :has-more="hasMoreEvaluations"/>
           </main>
         </n-tab-pane>
         <n-tab-pane name="stats" tab="Statistics">
@@ -114,6 +114,7 @@ const { lastPicture: data, evaluations, history, dailyHistory, settings } = stor
 const loading = ref(false);
 const refreshing = ref(false);
 const downloadingDataset = ref(false);
+const hasMoreEvaluations = ref(true);
 const isMobile = ref(window.innerWidth < 1000);
 const headerControls = useHeaderControls();
 let evaluationEventHandler = null;
@@ -160,6 +161,7 @@ const host = import.meta.env.VITE_HOST;
 // Initial load: resets data and shows skeletons (used on mount / meter change)
 const loadMeter = async () => {
   loading.value = true;
+  hasMoreEvaluations.value = true;
   store.resetMeterData();
   try {
     await store.fetchAll(id.value);
@@ -195,7 +197,10 @@ watch(
 const loadMoreEvaluations = async () => {
   if (!evaluations.value || evaluations.value.length === 0) return;
   const lastId = evaluations.value[evaluations.value.length - 1].id;
-  await store.fetchEvaluations(id.value, 10, lastId);
+  const data = await store.fetchEvaluations(id.value, 10, lastId);
+  if (!data?.evals?.length || data.evals.length < 10) {
+    hasMoreEvaluations.value = false;
+  }
 };
 
 const deleteMeter = async () => {

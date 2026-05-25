@@ -12,13 +12,22 @@
                   <n-icon size="14"><component :is="sourceIcon" /></n-icon>
                   <span>{{ sourceLabel }}</span>
                 </span>
-                <span class="source-pill" :style="{ '--pill-color': '#7e8798' }">
+                <span class="source-pill" :style="{ '--pill-color': '#7e8798' , 'margin-right': '4px'}">
                   <n-icon size="14"><AccessTimeFilled/></n-icon>
                   <n-tooltip trigger="hover" placement="bottom">
                     <template #trigger>
                       <span>{{ last_updated_relative }}</span>
                     </template>
                     {{ last_updated_locale }}
+                  </n-tooltip>
+                </span>
+                <span class="source-pill" :style="{ '--pill-color': '#7e8798'}" v-if="stats && stats.median_interval != null">
+                  <n-icon size="14"><TimerOutlined/></n-icon>
+                  <n-tooltip trigger="hover" placement="bottom">
+                    <template #trigger>
+                      <span>{{ formatInterval(stats.median_interval) }}</span>
+                    </template>
+                    Median interval between images
                   </n-tooltip>
                 </span>
               </div>
@@ -100,7 +109,7 @@
 <script setup>
 import {NCard, NButton, NFlex, NDropdown, NIcon, NTooltip, useDialog} from 'naive-ui';
 import {defineProps, computed, ref, onMounted, watch} from 'vue';
-import { MoreVertFilled, HomeOutlined, PublicFilled, WifiTetheringOutlined, HelpOutlineOutlined, AccessTimeFilled } from '@vicons/material';
+import { MoreVertFilled, HomeOutlined, PublicFilled, WifiTetheringOutlined, HelpOutlineOutlined, AccessTimeFilled, TimerOutlined } from '@vicons/material';
 import WifiStatus from "@/components/WifiStatus.vue";
 import { useThemeStore } from '@/stores/themeStore';
 import { storeToRefs } from 'pinia';
@@ -265,6 +274,14 @@ const isDecimalDigitIndex = (idx, digitLength) => {
 const formatConsumption = (rawValue) => {
   if (rawValue == null) return '—';
   return (rawValue / meterScale.value).toFixed(Math.min(meterDecimals.value, 3)) + ' ' + meterUnit.value;
+};
+
+const formatInterval = (seconds) => {
+  if (seconds == null) return '—';
+  if (seconds < 60) return Math.round(seconds) + 's';
+  if (seconds < 3600) return Math.round(seconds / 60) + 'min';
+  if (seconds < 86400) return (seconds / 3600).toFixed(1) + 'h';
+  return Math.round(seconds / 86400) + 'd';
 };
 </script>
 
