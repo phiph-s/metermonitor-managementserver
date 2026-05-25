@@ -1951,7 +1951,11 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
             raise HTTPException(status_code=403, detail="Access denied")
         if not os.path.isfile(target):
             raise HTTPException(status_code=404, detail="Binary not found")
-        return FileResponse(target, media_type="application/octet-stream")
+        return FileResponse(
+            target,
+            media_type="application/octet-stream",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/")
     async def serve_index():

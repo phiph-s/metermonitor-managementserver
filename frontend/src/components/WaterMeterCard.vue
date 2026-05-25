@@ -8,11 +8,11 @@
               <img class="last-image" :src="last_image" :alt="meter_name" v-if="last_image" />
               <div>
                 <span class="card-title" :title="meter_name">{{ meter_name }}</span>
-                <span class="source-pill" :style="{ '--pill-color': sourceColor }">
+                <span class="source-pill" :style="{ '--pill-color': sourceColor, 'margin-right': '4px'}">
                   <n-icon size="14"><component :is="sourceIcon" /></n-icon>
                   <span>{{ sourceLabel }}</span>
                 </span>
-                <span class="source-pill" :style="{ '--pill-color': 'rgba(57,56,56,0.61)' }">
+                <span class="source-pill" :style="{ '--pill-color': '#7e8798' }">
                   <n-icon size="14"><AccessTimeFilled/></n-icon>
                   <n-tooltip trigger="hover" placement="bottom">
                     <template #trigger>

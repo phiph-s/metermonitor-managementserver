@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 import pty
 import re
@@ -696,11 +697,52 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
 
 
 def get_flash_args() -> dict:
-    flash_args_path = os.path.join(FIRMWARE_DIR, "build", "flash_args")
-    if not os.path.exists(flash_args_path):
-        raise FileNotFoundError("flash_args not found – build the firmware first.")
+    build_dir = os.path.join(FIRMWARE_DIR, "build")
 
-    with open(flash_args_path) as f:
+    # Prefer flasher_args.json (ESP-IDF 5.x structured format)
+    json_path = os.path.join(build_dir, "flasher_args.json")
+    if os.path.exists(json_path):
+        return _parse_flasher_args_json(json_path, build_dir)
+
+    # Fall back to text flash_args
+    text_path = os.path.join(build_dir, "flash_args")
+    if os.path.exists(text_path):
+        return _parse_flash_args_text(text_path, build_dir)
+
+    raise FileNotFoundError("flasher_args.json / flash_args not found – build the firmware first.")
+
+
+def _parse_flasher_args_json(json_path: str, build_dir: str) -> dict:
+    with open(json_path) as f:
+        data = json.load(f)
+
+    settings = data.get("flash_settings", {})
+    args: dict = {
+        "flash_mode": settings.get("flash_mode", "dio"),
+        "flash_freq": settings.get("flash_freq", "40m"),
+        "flash_size": settings.get("flash_size", "detect"),
+        "binaries": [],
+    }
+
+    flash_files = data.get("flash_files", {})
+    for hex_offset, rel_path in flash_files.items():
+        offset = int(hex_offset, 16)
+        bin_path = os.path.join(build_dir, rel_path)
+        if os.path.exists(bin_path):
+            args["binaries"].append(
+                {
+                    "offset": offset,
+                    "path": rel_path,
+                    "filename": os.path.basename(rel_path),
+                    "size": os.path.getsize(bin_path),
+                }
+            )
+
+    return args
+
+
+def _parse_flash_args_text(text_path: str, build_dir: str) -> dict:
+    with open(text_path) as f:
         content = f.read().strip()
 
     args: dict = {
@@ -725,7 +767,7 @@ def get_flash_args() -> dict:
         if m:
             offset = int(m.group(1), 16)
             rel_path = m.group(2)
-            bin_path = os.path.join(FIRMWARE_DIR, "build", rel_path)
+            bin_path = os.path.join(build_dir, rel_path)
             if os.path.exists(bin_path):
                 args["binaries"].append(
                     {
