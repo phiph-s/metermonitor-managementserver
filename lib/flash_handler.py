@@ -515,6 +515,25 @@ def _find_idf_venv_python(env: dict) -> str:
     return matches[-1] if matches else sys.executable
 
 
+def _apply_firmware_source_patches() -> None:
+    """Patch known bugs in the firmware source before building."""
+    nvs_helper = os.path.join(FIRMWARE_DIR, "main", "nvs_helper.c")
+    if not os.path.isfile(nvs_helper):
+        return
+    with open(nvs_helper) as f:
+        src = f.read()
+    if "strncpy" in src and "<string.h>" not in src:
+        # Insert #include <string.h> after the last existing #include line
+        lines = src.splitlines(keepends=True)
+        insert_at = 0
+        for i, line in enumerate(lines):
+            if line.startswith("#include"):
+                insert_at = i + 1
+        lines.insert(insert_at, "#include <string.h>\n")
+        with open(nvs_helper, "w") as f:
+            f.writelines(lines)
+
+
 def _apply_idf_cmake_workarounds(idf_path: str) -> None:
     """
     Patch known ESP-IDF cmake bugs that surface at build time, not at image-build time.
@@ -575,6 +594,7 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
         return
 
     _apply_idf_cmake_workarounds(idf_path)
+    _apply_firmware_source_patches()
 
     idf_py = os.path.join(idf_path, "tools", "idf.py")
 
