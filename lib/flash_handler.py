@@ -7,7 +7,7 @@ import subprocess
 from typing import AsyncGenerator, Optional
 
 FIRMWARE_REPO_URL = "https://github.com/MeterMonitor-io/MeterMonitor-esp"
-FIRMWARE_DIR = "/tmp/metermonitor-esp"
+FIRMWARE_DIR = "/data/metermonitor-esp"
 
 
 def clone_or_pull_firmware() -> dict:
@@ -118,7 +118,13 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
     def _parse_default(raw: str):
         raw = raw.strip().split("#")[0].strip()
         if raw.startswith('"') and raw.endswith('"'):
-            return raw[1:-1]
+            inner = raw[1:-1]
+            # `default "y"` / `default "n"` are boolean, not strings
+            if inner.lower() == "y":
+                return True
+            if inner.lower() == "n":
+                return False
+            return inner
         if raw.lower() == "y":
             return True
         if raw.lower() == "n":

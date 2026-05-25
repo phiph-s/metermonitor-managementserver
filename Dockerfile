@@ -39,6 +39,11 @@ RUN git clone --depth=1 --shallow-submodules --branch ${IDF_VERSION} \
         https://github.com/espressif/esp-idf.git ${IDF_PATH} \
     && cd ${IDF_PATH} \
     && ./install.sh esp32 \
+    # Replace full git history with a bare init so ESP-IDF cmake scripts
+    # (gdbinit.cmake etc.) can still resolve `git rev-parse --show-toplevel`
+    # without the hundreds-of-MB history being present at runtime.
+    && rm -rf ${IDF_PATH}/.git \
+    && git -C ${IDF_PATH} init -q \
     \
     # ── strip tools not needed for compilation ─────────────────────────────
     # Debuggers and JTAG interface
@@ -51,7 +56,6 @@ RUN git clone --depth=1 --shallow-submodules --branch ${IDF_VERSION} \
     && rm -rf /root/.espressif/dist \
     \
     # ── strip IDF source content not needed at runtime ─────────────────────
-    && rm -rf ${IDF_PATH}/.git \
     && rm -rf ${IDF_PATH}/examples \
     && rm -rf ${IDF_PATH}/docs \
     && find ${IDF_PATH}/components -type d \( -name "test" -o -name "test_apps" \) \
