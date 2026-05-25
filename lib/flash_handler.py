@@ -419,39 +419,81 @@ def _find_idf_path() -> str:
 
 async def _get_idf_build_env(idf_path: str) -> dict:
     """
-    Run idf_tools.py export to obtain the exact environment that ESP-IDF needs.
-    idf_tools.py is a standalone script (no venv required) so we can run it with
-    the current Python interpreter.  It emits KEY=VALUE lines we parse into a dict.
+    Build the full environment needed to run idf.py build.
+
+    1. Run idf_tools.py export (standalone script, any Python) for the official
+       KEY=VALUE pairs — PATH, OPENOCD_SCRIPTS, etc.
+    2. Supplement with a direct glob over ~/.espressif/tools so the xtensa
+       compiler is guaranteed to be in PATH even if idf_tools.py produces no
+       output (e.g. partial Docker environment).
+    3. Explicitly set IDF_PYTHON_ENV_PATH so idf.py doesn't warn and internally
+       reconstruct the environment incorrectly.
     """
-    idf_tools = os.path.join(idf_path, "tools", "idf_tools.py")
-    base_env = {**os.environ, "IDF_PATH": idf_path}
+    espressif_dir = os.path.expanduser("~/.espressif")
+    tools_dir = os.path.join(espressif_dir, "tools")
 
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, idf_tools, "export", "--format=key-value",
-        env=base_env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await proc.communicate()
+    env = {
+        **os.environ,
+        "IDF_PATH": idf_path,
+        "IDF_TOOLS_PATH": espressif_dir,
+    }
 
-    env = dict(base_env)
-    for line in stdout.decode("utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        if key == "PATH":
-            val = val.replace("$PATH", os.environ.get("PATH", ""))
-        env[key.strip()] = val.strip()
+    # ── 1. idf_tools.py export ─────────────────────────────────────────────
+    idf_tools_py = os.path.join(idf_path, "tools", "idf_tools.py")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, idf_tools_py, "export", "--format=key-value",
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if key == "PATH":
+                val = val.replace("$PATH", os.environ.get("PATH", ""))
+            env[key] = val
+    except Exception:
+        pass
+
+    # ── 2. Glob-based PATH supplement ──────────────────────────────────────
+    # Guarantees the xtensa compiler is reachable even when idf_tools.py
+    # produces partial or no output (common in minimal Docker environments).
+    tool_patterns = [
+        "xtensa-esp-elf/*/xtensa-esp-elf/bin",   # ESP-IDF 5.x naming
+        "xtensa-esp32-elf/*/bin",                  # older naming
+        "esp32ulp-elf/*/esp32ulp-elf/bin",
+        "cmake/*/bin",
+        "ninja/*/",
+    ]
+    extra: list[str] = []
+    for pat in tool_patterns:
+        extra.extend(sorted(glob.glob(os.path.join(tools_dir, pat))))
+    extra.append(os.path.join(idf_path, "tools"))
+
+    current_path = env.get("PATH", os.environ.get("PATH", ""))
+    new_dirs = [p for p in extra if os.path.isdir(p) and p not in current_path]
+    if new_dirs:
+        env["PATH"] = os.pathsep.join(new_dirs) + os.pathsep + current_path
+
+    # ── 3. IDF_PYTHON_ENV_PATH ─────────────────────────────────────────────
+    if "IDF_PYTHON_ENV_PATH" not in env:
+        venv_dirs = sorted(
+            glob.glob(os.path.join(espressif_dir, "python_env", "idf*_env"))
+        )
+        if venv_dirs:
+            env["IDF_PYTHON_ENV_PATH"] = venv_dirs[-1]
 
     return env
 
 
 def _find_idf_venv_python(env: dict) -> str:
-    """
-    Return the Python executable from the ESP-IDF virtualenv.
-    Prefers IDF_PYTHON_ENV_PATH from the env dict, falls back to a glob.
-    """
+    """Return the Python executable from the ESP-IDF virtualenv."""
     venv_root = env.get("IDF_PYTHON_ENV_PATH", "")
     for candidate in (
         os.path.join(venv_root, "bin", "python"),
@@ -460,7 +502,7 @@ def _find_idf_venv_python(env: dict) -> str:
         if venv_root and os.path.isfile(candidate):
             return candidate
 
-    # Fallback: glob for any ESP-IDF venv installed under ~/.espressif
+    # Fallback: glob
     matches = sorted(
         glob.glob(os.path.expanduser("~/.espressif/python_env/idf*_env/bin/python"))
     )

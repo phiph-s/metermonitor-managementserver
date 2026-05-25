@@ -1,5 +1,5 @@
 <template>
-  <n-space size="large" justify="center">
+  <n-flex size="large" justify="center" style="width: 100%;">
     <n-layout class="maincontainer">
       <n-layout-content content-style="padding: 24px;">
         <div class="app-header">
@@ -85,11 +85,11 @@
         <WhatsNewDialog />
       </n-layout-content>
     </n-layout>
-  </n-space>
+  </n-flex>
 </template>
 
 <script setup>
-import {NLayout, NLayoutContent, NSpace, NButton, NIcon, NTooltip, NPopover, NFlex} from 'naive-ui';
+import {NLayout, NLayoutContent, NButton, NIcon, NTooltip, NPopover, NFlex} from 'naive-ui';
 import { LightModeOutlined, DarkModeOutlined, WarningAmberOutlined, RefreshOutlined, HomeOutlined, SettingsOutlined, SpeedOutlined, BuildOutlined } from '@vicons/material';
 import {onMounted, onUnmounted, ref, computed, reactive, provide} from "vue";
 import WhatsNewDialog from '@/components/WhatsNewDialog.vue';

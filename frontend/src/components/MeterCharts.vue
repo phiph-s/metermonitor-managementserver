@@ -112,8 +112,8 @@ const confidenceSeries = computed(() => {
 const combinedSeries = computed(() => {
   if (!usageSeries.value.length) return [];
   return [
-    { ...usageSeries.value[0], type: 'area' },
-    { ...confidenceSeries.value[0], type: 'column' },
+    { ...confidenceSeries.value[0], type: 'area' },  // fills background
+    { ...usageSeries.value[0], type: 'line' },         // drawn on top
   ];
 });
 
@@ -172,17 +172,40 @@ const confidenceColor = computed(() => isDark.value ? '#f59e0b' : '#d97706');
 
 const combinedChartOptions = computed(() => ({
   theme: { mode: isDark.value ? 'dark' : 'light' },
-  chart: { type: 'line', zoom: { enabled: false }, background: '#00000000', toolbar: { show: false }, animations: { enabled: false }, sparkline: { enabled: true } },
+  chart: {
+    type: 'line',
+    zoom: { enabled: false },
+    background: '#00000000',
+    toolbar: { show: false },
+    animations: { enabled: false },
+    sparkline: { enabled: true }
+  },
+  // seriesName ties each axis to its series regardless of array order
   yaxis: [
-    { min: usageMin.value, max: usageMax.value, labels: { show: false } },
-    { opposite: true, show: false, min: 0, max: 100 },
+    { seriesName: 'Confidence', opposite: true, show: false, min: 0, max: 100 },
+    { seriesName: 'Usage', min: usageMin.value, max: usageMax.value, labels: { show: false } },
   ],
   grid: { show: false, padding: { left: 0, right: 0, top: 4, bottom: 0 } },
-  plotOptions: { bar: { columnWidth: '75%', borderRadius: 4 } },
-  stroke: { curve: 'smooth', width: [2.5, 0] },
-  fill: { type: ['gradient', 'solid'], opacity: [0.18, 0.55], gradient: { shadeIntensity: 0.5, opacityFrom: 0.2, opacityTo: 0.02, stops: [0, 70, 100] } },
-  tooltip: { x: { format: 'dd MMM HH:mm' }, y: [{ formatter: v => `${v.toFixed(3)} ${props.unit}` }, { formatter: v => `${v.toFixed(1)}%` }], marker: { show: false } },
-  colors: [usageColor.value, confidenceColor.value],
+  stroke: { curve: 'smooth', width: [1, 2.5] },
+  fill: {
+    type: ['gradient', 'solid'],
+    gradient: {
+      type: 'vertical',
+      shadeIntensity: 0,
+      opacityFrom: 0.35,
+      opacityTo: 0.04,
+      stops: [0, 85, 100],
+    },
+  },
+  tooltip: {
+    x: { format: 'dd MMM HH:mm' },
+    y: [
+      { formatter: v => `${v.toFixed(1)}%` },
+      { formatter: v => `${v.toFixed(3)} ${props.unit}` },
+    ],
+    marker: { show: false }
+  },
+  colors: [confidenceColor.value, usageColor.value],
   markers: { size: 0, strokeWidth: 0 },
   dataLabels: { enabled: false },
   legend: { show: false },
