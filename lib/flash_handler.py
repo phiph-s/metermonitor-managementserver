@@ -269,13 +269,16 @@ def _parse_kconfig_content(content: str, target_menu: str) -> Optional[list]:
     return options
 
 
-def get_kconfig_options(target_menu: str = "MeterMonitor") -> list:
+def get_kconfig_options(target_menus: list = None) -> list:
     """
-    Collect options from every Kconfig file that contains the target menu.
+    Collect options from every Kconfig file that contains any of the target menus.
     main/Kconfig.projbuild is checked first (it's the standard home for
     project-level ESP-IDF configuration such as WiFi / MQTT / camera settings).
-    Options from later files only fill in names not yet seen.
+    Options from later files/menus only fill in names not yet seen.
     """
+    if target_menus is None:
+        target_menus = ["MeterMonitor", "Example Connection Configuration"]
+
     seen: set = set()
     merged: list = []
 
@@ -294,13 +297,14 @@ def get_kconfig_options(target_menu: str = "MeterMonitor") -> list:
                 content = f.read()
         except OSError:
             continue
-        opts = _parse_kconfig_content(content, target_menu)
-        if opts is None:
-            continue
-        for opt in opts:
-            if opt["name"] not in seen:
-                seen.add(opt["name"])
-                merged.append(opt)
+        for menu in target_menus:
+            opts = _parse_kconfig_content(content, menu)
+            if opts is None:
+                continue
+            for opt in opts:
+                if opt["name"] not in seen:
+                    seen.add(opt["name"])
+                    merged.append(opt)
 
     return merged
 
