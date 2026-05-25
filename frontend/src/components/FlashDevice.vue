@@ -216,13 +216,19 @@
             <n-alert v-if="!webSerialSupported" type="warning" title="WebSerial not supported">
               Please use <strong>Chrome</strong> or <strong>Edge</strong> (v89+).
             </n-alert>
-            <n-alert v-else type="info" title="Before connecting">
-              <ul style="margin:4px 0;padding-left:18px;">
-                <li>Hold the <strong>BOOT</strong> button while plugging in the USB cable</li>
-                <li>Release once connected, then select the correct port</li>
-              </ul>
-            </n-alert>
-            <n-flex v-if="!flashing && !flashSuccess" align="center" gap="8">
+            <template v-else>
+              <n-alert v-if="resetMode === 'auto'" type="info" title="Auto reset">
+                The device will be reset into bootloader mode automatically via DTR/RTS. If connection fails, switch to <strong>Manual</strong> mode.
+              </n-alert>
+              <n-alert v-else type="warning" title="Manual bootloader mode">
+                <ol style="margin:4px 0;padding-left:18px;">
+                  <li>Hold the <strong>BOOT</strong> button on the device</li>
+                  <li>Click <strong>Connect &amp; Flash</strong> and select the port</li>
+                  <li>Release <strong>BOOT</strong> once you see "Connecting…" in the log</li>
+                </ol>
+              </n-alert>
+            </template>
+            <n-flex v-if="!flashing && !flashSuccess" align="center" gap="8" wrap>
               <n-button type="primary" :disabled="!webSerialSupported" @click="doFlash">
                 Connect &amp; Flash
               </n-button>
@@ -233,6 +239,10 @@
                 style="width:130px;"
               />
               <n-text depth="3" style="font-size:11px;">baud rate</n-text>
+              <n-radio-group v-model:value="resetMode" size="small">
+                <n-radio-button value="auto">Auto reset</n-radio-button>
+                <n-radio-button value="manual">Manual</n-radio-button>
+              </n-radio-group>
               <n-button @click="step = 3">← Back to Build</n-button>
             </n-flex>
             <div v-if="flashProgress !== null" class="flash-progress">
@@ -286,7 +296,7 @@ import {
   NCard, NButton, NSpace, NFlex, NSteps, NStep,
   NInput, NInputNumber, NSwitch, NEmpty, NAlert, NProgress,
   NIcon, NTooltip, NText, NSpin, NTag, NCollapse, NCollapseItem,
-  NSelect, NDivider,
+  NSelect, NDivider, NRadioGroup, NRadioButton,
 } from 'naive-ui';
 import {
   CheckCircleOutlined,
@@ -409,7 +419,8 @@ const BAUD_RATES = [
 ];
 
 const webSerialSupported = ref('serial' in navigator);
-const baudRate = ref(115200);
+const baudRate = ref(460800);
+const resetMode = ref('auto');
 const flashing = ref(false);
 const flashSuccess = ref(false);
 const flashError = ref('');
@@ -719,7 +730,7 @@ async function doFlash() {
     flashLog_push('Initializing WebSerial...');
     const { ESPLoader, Transport } = await import('esptool-js');
     const port = await navigator.serial.requestPort();
-    transport = new Transport(port, true);
+    transport = new Transport(port, false);
     const terminal = {
       clean: () => {},
       writeLine: (d) => flashLog_push(d),
@@ -729,9 +740,10 @@ async function doFlash() {
       },
     };
 
-    flashLog_push('Connecting to device...');
-    const loader = new ESPLoader({ transport, baudrate: baudRate.value, terminal });
-    const chip = await loader.main();
+    const isManual = resetMode.value === 'manual';
+    flashLog_push(isManual ? 'Connecting (manual bootloader mode)...' : 'Connecting to device...');
+    const loader = new ESPLoader({ transport, baudrate: baudRate.value, terminal, debugLogging: false });
+    const chip = await loader.main(isManual ? 'no_reset' : 'default_reset');
     flashLog_push(`Connected: ${chip}`);
 
     const total = fileArray.length;
@@ -751,6 +763,8 @@ async function doFlash() {
       calculateMD5Hash: () => '',
     });
 
+    flashLog_push('Resetting device...');
+    await loader.after('hard_reset');
     flashProgress.value = 100;
     flashProgressLabel.value = 'Done!';
     flashSuccess.value = true;
