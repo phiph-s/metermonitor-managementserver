@@ -243,6 +243,34 @@
           <n-alert v-if="flashSuccess" type="success" title="Flashed successfully! Device will restart." />
           <n-alert v-if="flashError" type="error" :title="flashError" />
           <n-button v-if="flashSuccess || flashError" @click="resetFlash">Flash again</n-button>
+
+          <n-divider style="margin: 4px 0;" />
+
+          <!-- Serial monitor -->
+          <n-flex align="center" gap="8">
+            <n-button
+              v-if="!monitorActive"
+              :disabled="!webSerialSupported || flashing"
+              size="small"
+              @click="startMonitor"
+            >
+              View Device Logs
+            </n-button>
+            <n-button v-else size="small" type="error" @click="stopMonitor">
+              Stop Monitor
+            </n-button>
+            <n-select
+              v-model:value="monitorBaudRate"
+              :options="BAUD_RATES"
+              size="small"
+              style="width:130px;"
+              :disabled="monitorActive"
+            />
+            <n-text depth="3" style="font-size:11px;">monitor baud</n-text>
+          </n-flex>
+          <div v-if="monitorActive || monitorOutput" class="build-terminal" ref="monitorEl">
+            <pre>{{ monitorOutput }}</pre>
+          </div>
         </n-space>
       </n-card>
     </div>
@@ -385,6 +413,14 @@ const flashError = ref('');
 const flashLog = ref([]);
 const flashProgress = ref(null);
 const flashProgressLabel = ref('');
+
+// ── Serial monitor state ───────────────────────────────────────────────────────
+const monitorActive = ref(false);
+const monitorOutput = ref('');
+const monitorBaudRate = ref(115200);
+const monitorEl = ref(null);
+let _monitorReader = null;
+let _monitorPort = null;
 
 // ── Section logic ──────────────────────────────────────────────────────────────
 
@@ -607,6 +643,46 @@ async function doBuild() {
       .replace('__BUILD_SUCCESS__\n', '')
       .replace(/__BUILD_FAILED__\d+__\n?/, '');
   }
+}
+
+// ── Serial monitor ─────────────────────────────────────────────────────────────
+
+async function startMonitor() {
+  monitorActive.value = true;
+  monitorOutput.value = '';
+  try {
+    const port = await navigator.serial.requestPort();
+    _monitorPort = port;
+    await port.open({ baudRate: monitorBaudRate.value });
+    const reader = port.readable.getReader();
+    _monitorReader = reader;
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        monitorOutput.value += decoder.decode(value, { stream: true });
+        await nextTick();
+        if (monitorEl.value) monitorEl.value.scrollTop = monitorEl.value.scrollHeight;
+      }
+    } catch (e) {
+      if (monitorActive.value) monitorOutput.value += `\n[Error: ${e.message}]\n`;
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (e) {
+    if (e.name !== 'NotFoundError') monitorOutput.value += `Error: ${e.message}\n`;
+  } finally {
+    monitorActive.value = false;
+    _monitorReader = null;
+    if (_monitorPort) { try { await _monitorPort.close(); } catch { /* ignore */ } _monitorPort = null; }
+  }
+}
+
+async function stopMonitor() {
+  monitorActive.value = false;
+  if (_monitorReader) { try { await _monitorReader.cancel(); } catch { /* ignore */ } _monitorReader = null; }
+  if (_monitorPort) { try { await _monitorPort.close(); } catch { /* ignore */ } _monitorPort = null; }
 }
 
 // ── Step 4: Flash ──────────────────────────────────────────────────────────────

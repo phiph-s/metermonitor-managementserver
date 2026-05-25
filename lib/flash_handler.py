@@ -1,7 +1,9 @@
 import glob
 import os
+import pty
 import re
 import sys
+import termios
 import asyncio
 import subprocess
 from typing import AsyncGenerator, Optional
@@ -598,29 +600,60 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
 
     idf_py = os.path.join(idf_path, "tools", "idf.py")
 
-    # Use idf_tools.py to get the full tool PATH, then run idf.py with the
-    # venv Python directly — sourcing export.sh in a subshell does not reliably
-    # propagate the venv activation into the child process.
     env = await _get_idf_build_env(idf_path)
-    # Disable Python's own output buffering so idf.py flushes each line immediately.
     env["PYTHONUNBUFFERED"] = "1"
     venv_python = _find_idf_venv_python(env)
+
+    # Use a pty instead of a plain pipe so that idf.py and ninja see a terminal
+    # and switch from fully-buffered to line-buffered output, giving us live
+    # progress lines instead of everything arriving in one chunk at the end.
+    master_fd, slave_fd = pty.openpty()
+    try:
+        # Disable NL→CRNL conversion so output contains plain \n, not \r\n
+        attrs = termios.tcgetattr(slave_fd)
+        attrs[1] &= ~termios.ONLCR
+        termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
+    except Exception:
+        pass
+
+    proc = None
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _on_readable():
+        try:
+            data = os.read(master_fd, 4096)
+            if data:
+                queue.put_nowait(data)
+        except OSError:
+            loop.remove_reader(master_fd)
+            queue.put_nowait(None)  # EOF sentinel
 
     try:
         proc = await asyncio.create_subprocess_exec(
             venv_python, idf_py, "build",
             cwd=FIRMWARE_DIR,
             env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
         )
-        # Read in small chunks rather than line-by-line so we get bytes as soon
-        # as they arrive even when the subprocess hasn't written a full newline yet.
+        os.close(slave_fd)
+        slave_fd = -1
+        loop.add_reader(master_fd, _on_readable)
+
         while True:
-            chunk = await proc.stdout.read(512)
-            if not chunk:
+            try:
+                data = await asyncio.wait_for(queue.get(), timeout=25.0)
+            except asyncio.TimeoutError:
+                # Heartbeat: prevents the HA ingress proxy from closing the
+                # connection during long compilation steps with no output.
+                yield "\n"
+                continue
+            if data is None:
                 break
-            yield chunk.decode("utf-8", errors="replace")
+            yield data.decode("utf-8", errors="replace")
+
         await proc.wait()
         if proc.returncode == 0:
             yield "__BUILD_SUCCESS__\n"
@@ -629,6 +662,23 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
     except Exception as e:
         yield f"ERROR: {e}\n"
         yield "__BUILD_FAILED__1__\n"
+    finally:
+        try:
+            loop.remove_reader(master_fd)
+        except Exception:
+            pass
+        if slave_fd != -1:
+            try:
+                os.close(slave_fd)
+            except OSError:
+                pass
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.wait()
 
 
 def get_flash_args() -> dict:
