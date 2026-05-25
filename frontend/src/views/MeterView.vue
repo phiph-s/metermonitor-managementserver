@@ -38,6 +38,9 @@
           <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
         </div>
       </n-tab-pane>
+      <n-tab-pane name="evaluations" tab="Statistics">
+
+      </n-tab-pane>
     </n-tabs>
   </template>
 
@@ -69,19 +72,25 @@
           />
         </div>
       </aside>
-      <main class="meter-content" v-if="loading">
-        <div class="evaluations-skeleton">
-          <n-skeleton height="20px" width="40%" />
-          <div v-for="i in 6" :key="i" class="evaluations-skeleton-card">
-            <n-skeleton height="16px" width="30%" />
-            <n-skeleton height="12px" width="90%" />
-            <n-skeleton height="12px" width="75%" />
-          </div>
-        </div>
-      </main>
-      <main class="meter-content" v-else-if="evaluations !== null">
-        <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
-      </main>
+      <n-tabs type="line" animated>
+        <n-tab-pane name="details" tab="Evaluations">
+          <main class="meter-content" v-if="loading">
+            <div class="evaluations-skeleton">
+              <n-skeleton height="20px" width="40%" />
+              <div v-for="i in 6" :key="i" class="evaluations-skeleton-card">
+                <n-skeleton height="16px" width="30%" />
+                <n-skeleton height="12px" width="90%" />
+                <n-skeleton height="12px" width="75%" />
+              </div>
+            </div>
+          </main>
+          <main class="meter-content" v-else-if="evaluations !== null">
+            <EvaluationResultList :evaluations="evaluations" :name="id" :decimals="settings.decimals" :meter-type="settings.meter_type" :unit="settings.unit" @load-more="loadMoreEvaluations" @dataset-uploaded="loadMeter"/>
+          </main>
+        </n-tab-pane>
+        <n-tab-pane name="stats" tab="Statistics">
+        </n-tab-pane>
+      </n-tabs>
     </div>
   </template>
 </template>
@@ -344,7 +353,7 @@ const clearEvaluations = async () => {
 .meter-content {
   flex: 1;
   min-width: 0;
-  height: calc(100vh - 104px);
+  height: calc(100vh - 200px);
 }
 
 .meter-skeleton {

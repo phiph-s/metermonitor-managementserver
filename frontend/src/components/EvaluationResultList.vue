@@ -22,96 +22,88 @@
           </n-icon>
         </div>
         <n-flex :class="{ redbg: evaluation.result == null, econtainer: true }" vertical :size="0">
-          <div class="list-row">
-            <div class="cell meta-cell">
-              <div class="timestamp" :title="formattedTimestampAbsolute(evaluation.timestamp)">
-                {{ formattedTimestamp(evaluation.timestamp) }}
-              </div>
-              <div v-if="evaluation.result" class="corrected-block">
-                <div class="result-digits">
-                  <span
-                    v-for="[i, digit] in (evaluation.result + '').padStart(evaluation.th_digits.length, '0').split('').entries()"
-                    :key="i + 'f'"
-                    :class="{
-                      'google-sans-code': true,
-                      adjustment: true,
-                      red: digit !== evaluation.predictions[i][0][0],
-                      blue: evaluation.predictions[i][0][0] === 'r',
-                      orange: evaluation.denied_digits[i] && evaluation.predictions[i][0][0] != digit
-                    }"
-                  >
-                    <template v-if="isDecimalSeparatorIndex(i, evaluation.th_digits.length)">
-                      {{ digit }},
-                    </template>
-                    <template v-else>
-                      {{ digit }}
-                    </template>
-                  </span>
-                  <span class="adjustment unit">{{ meterUnit }}</span>
-                </div>
-              </div>
+          <n-flex align="center">
+            <div class="timestamp" :title="formattedTimestampAbsolute(evaluation.timestamp)">
+              {{ formattedTimestamp(evaluation.timestamp) }}
             </div>
-
-            <div class="cell conf-cell">
-              <div class="label">Confidence</div>
-              <template v-if="evaluation.total_confidence">
-                <span :style="{ color: getColor(evaluation.total_confidence) }">
-                  <b>{{ (evaluation.total_confidence * 100).toFixed(1) }}</b>%
-                </span>
-              </template>
-              <div v-else class="rejected-label">
-                Rejected
-              </div>
-            </div>
-
-            <div class="cell digits-cell">
-              <div class="digit-groups" aria-label="Digits with prediction and confidence">
-                <div
-                  v-for="(base64, j) in evaluation.th_digits_inverted"
-                  :key="evaluation.id + '-' + j"
-                  class="digit-group"
+            <div v-if="evaluation.result" class="corrected-block">
+              <div class="result-digits">
+                <span
+                  v-for="[i, digit] in (evaluation.result + '').padStart(evaluation.th_digits.length, '0').split('').entries()"
+                  :key="i + 'f'"
+                  :class="{
+                    'google-sans-code': true,
+                    adjustment: true,
+                    red: digit !== evaluation.predictions[i][0][0],
+                    blue: evaluation.predictions[i][0][0] === 'r',
+                    orange: evaluation.denied_digits[i] && evaluation.predictions[i][0][0] != digit
+                  }"
                 >
-                  <img
-                    class="digit theme-revert"
-                    :src="'data:image/png;base64,' + base64"
-                    alt="Watermeter"
-                  />
-                  <div class="digit-meta">
-                    <n-tooltip>
-                      <template #trigger>
-                        <span class="digit-pred">
-                          {{ (evaluation.predictions[j]?.[0]?.[0] === 'r') ? '↕' : evaluation.predictions[j]?.[0]?.[0] }}
-                        </span>
-                      </template>
-                      <span v-if="evaluation.predictions[j]">
-                        {{ (evaluation.predictions[j][1][0] === 'r') ? '↕' : evaluation.predictions[j][1][0] }}: {{ (evaluation.predictions[j][1][1] * 100).toFixed(1) }}%<br>
-                        {{ (evaluation.predictions[j][2][0] === 'r') ? '↕' : evaluation.predictions[j][2][0] }}: {{ (evaluation.predictions[j][2][1] * 100).toFixed(1) }}%
-                      </span>
-                    </n-tooltip>
-                    <span
-                      class="digit-conf"
-                      :style="{ color: getColor(evaluation.predictions[j]?.[0]?.[1] || 0), textDecoration: evaluation.denied_digits[j]? 'line-through' : 'none' }"
-                    >
-                      {{ evaluation.predictions[j] ? Math.round(evaluation.predictions[j][0][1] * 100) : '--' }}
-                    </span>
-                  </div>
-                </div>
+                  <template v-if="isDecimalSeparatorIndex(i, evaluation.th_digits.length)">
+                    {{ digit }},
+                  </template>
+                  <template v-else>
+                    {{ digit }}
+                  </template>
+                </span>
+                <span class="adjustment unit">{{ meterUnit }}</span>
               </div>
             </div>
 
-            <div class="cell action-cell">
-              <n-button
-                size="small"
-                quaternary
-                circle
-                @click.stop="openUploadDialog(evaluation.colored_digits, evaluation.th_digits, name, evaluation.predictions)"
-              >
-                <template #icon>
-                  <n-icon><ArchiveOutlined /></n-icon>
-                </template>
-              </n-button>
+            <template v-if="evaluation.total_confidence">
+              <span :style="{ color: getColor(evaluation.total_confidence) }">
+                <b>{{ (evaluation.total_confidence * 100).toFixed(1) }}</b>%
+              </span>
+            </template>
+            <div v-else class="rejected-label">
+              Rejected
             </div>
-          </div>
+
+            <n-flex class="digit-groups" aria-label="Digits with prediction and confidence">
+              <div
+                v-for="(base64, j) in evaluation.th_digits_inverted"
+                :key="evaluation.id + '-' + j"
+                class="digit-group"
+              >
+                <img
+                  class="digit theme-revert"
+                  :src="'data:image/png;base64,' + base64"
+                  alt="Watermeter"
+                />
+                <div class="digit-meta">
+                  <n-tooltip>
+                    <template #trigger>
+                      <span class="digit-pred">
+                        {{ (evaluation.predictions[j]?.[0]?.[0] === 'r') ? '↕' : evaluation.predictions[j]?.[0]?.[0] }}
+                      </span>
+                    </template>
+                    <span v-if="evaluation.predictions[j]">
+                      {{ (evaluation.predictions[j][1][0] === 'r') ? '↕' : evaluation.predictions[j][1][0] }}: {{ (evaluation.predictions[j][1][1] * 100).toFixed(1) }}%<br>
+                      {{ (evaluation.predictions[j][2][0] === 'r') ? '↕' : evaluation.predictions[j][2][0] }}: {{ (evaluation.predictions[j][2][1] * 100).toFixed(1) }}%
+                    </span>
+                  </n-tooltip>
+                  <span
+                    class="digit-conf"
+                    :style="{ color: getColor(evaluation.predictions[j]?.[0]?.[1] || 0), textDecoration: evaluation.denied_digits[j]? 'line-through' : 'none' }"
+                  >
+                    {{ evaluation.predictions[j] ? Math.round(evaluation.predictions[j][0][1] * 100) : '--' }}
+                  </span>
+                </div>
+              </div>
+            </n-flex>
+
+            <n-button
+              size="small"
+              quaternary
+              circle
+              @click.stop="openUploadDialog(evaluation.colored_digits, evaluation.th_digits, name, evaluation.predictions)"
+            >
+              <template #icon>
+                <n-icon><ArchiveOutlined /></n-icon>
+              </template>
+            </n-button>
+
+          </n-flex>
         </n-flex>
       </div>
       <div ref="sentinel" class="scroll-sentinel">
@@ -362,16 +354,16 @@ watch(
   grid-template-columns: 200px 140px auto 48px;
   column-gap: 8px;
   row-gap: 6px;
+  width: 100%;
   align-items: center;
   justify-items: start;
-  width: fit-content;
   justify-content: start;
 }
 
 .cell {
   display: flex;
-  flex-direction: column;
   gap: 6px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -422,10 +414,6 @@ watch(
 }
 
 .digit-groups {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .digit-group {
