@@ -989,9 +989,13 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
     @app.get("/api/discovery", dependencies=[Depends(authenticate)])
     def get_discovery():
         cursor = db_connection().cursor()
-        cursor.execute("SELECT name, picture_timestamp, wifi_rssi, (SELECT source_type FROM sources WHERE name = watermeters.name LIMIT 1)"
-                       " FROM watermeters WHERE setup = 0")
-        return {"watermeters": [row for row in cursor.fetchall()]}
+        cursor.execute(
+            "SELECT name, picture_timestamp, wifi_rssi, "
+            "(SELECT source_type FROM sources WHERE name = watermeters.name LIMIT 1), "
+            "picture_thumbnail "
+            "FROM watermeters WHERE setup = 0"
+        )
+        return {"watermeters": [tuple(row) for row in cursor.fetchall()]}
 
     @app.post("/api/dataset/upload", dependencies=[Depends(authenticate)])
     def upload_dataset(payload: DatasetUpload):
@@ -1124,11 +1128,7 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
                               w.picture_timestamp,
                               w.wifi_rssi,
                               (SELECT value FROM history h WHERE h.name = w.name ORDER BY timestamp DESC LIMIT 1),
-                              (SELECT th_digits_inverted
-                               FROM evaluations e
-                               WHERE e.name = w.name
-                               ORDER BY id DESC
-                               LIMIT 1),
+                              w.picture_thumbnail,
                               w.picture_data_bbox IS NOT NULL,
                               (SELECT COALESCE(s.decimals, 3) FROM settings s WHERE s.name = w.name LIMIT 1),
                               COALESCE(w.meter_type, 'WATER'),
@@ -1139,12 +1139,11 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
 
         result = []
         for row in cursor.fetchall():
-            th_digits = json.loads(row[4]) if row[4] else None
             has_bbox = bool(row[5])
             decimals = row[6] if row[6] is not None else 3
             meter_type = row[7] if row[7] is not None else 'WATER'
             unit = row[8]
-            result.append((row[0], row[1], row[2], row[3], th_digits, has_bbox, decimals, meter_type, unit))
+            result.append((row[0], row[1], row[2], row[3], row[4], has_bbox, decimals, meter_type, unit))
 
         return {"watermeters": result}
 
@@ -1284,14 +1283,17 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
 
     @app.post("/api/setup", dependencies=[Depends(authenticate)])
     def setup_watermeter(config: ConfigRequest):
+        from lib.capture_utils import make_thumbnail
+        raw_bytes = base64.b64decode(config.picture.data)
+        thumbnail = make_thumbnail(raw_bytes, config.picture.format)
         db = db_connection()
         cursor = db.cursor()
         cursor.execute(
             """
             INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format,
                                      picture_timestamp, picture_width, picture_height, picture_length, picture_data,
-                                     setup)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                     picture_thumbnail, setup)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 config.name,
@@ -1302,7 +1304,8 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
                 config.picture.width,
                 config.picture.height,
                 config.picture.length,
-                config.picture.data
+                config.picture.data,
+                thumbnail
             )
         )
         db.commit()

@@ -1,7 +1,7 @@
 <script setup>
 import {AddOutlined, UsbFilled} from '@vicons/material';
 import {HardwareChipOutline} from '@vicons/ionicons5';
-import {NIcon} from 'naive-ui';
+import {NIcon, NFlex} from 'naive-ui';
 import { defineEmits } from 'vue';
 
 const emit = defineEmits([
@@ -11,8 +11,8 @@ const emit = defineEmits([
 </script>
 
 <template>
-  <n-flex vertical>
-    <div class="add-card" data-testid="add-watermeter-card" style="margin-left: 20px;" @click="emit('click-flash')">
+  <n-flex style="width: 375px; max-width: 100%;">
+    <div class="add-card" data-testid="add-watermeter-card" style="" @click="emit('click-flash')">
       <div class="add-card-inner">
         <n-flex>
           <n-icon size="32">
@@ -22,15 +22,15 @@ const emit = defineEmits([
             <HardwareChipOutline/>
           </n-icon>
         </n-flex>
-        <span>Flash Device</span>
+        <span>Flash ESP</span>
       </div>
     </div>
-    <div class="add-card" data-testid="add-watermeter-card" style="margin-left: 20px;" @click="emit('click-add')">
+    <div class="add-card" data-testid="add-watermeter-card" style="" @click="emit('click-add')">
       <div class="add-card-inner">
         <n-icon size="32">
           <AddOutlined/>
         </n-icon>
-        <span>Add custom source</span>
+        <span>Add new</span>
       </div>
     </div>
   </n-flex>
@@ -39,7 +39,7 @@ const emit = defineEmits([
 <style scoped>
 
 .add-card {
-  width: 300px;
+  width: calc(50% - 10px);
   height: 133px;
   min-height: 133px;
   border: 2px dashed rgba(255, 255, 255, 0.2);

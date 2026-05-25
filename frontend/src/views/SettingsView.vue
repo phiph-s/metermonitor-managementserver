@@ -1,18 +1,23 @@
 <template>
+  <br>
   <div class="settings-view">
     <n-spin :show="loading">
-      <div class="settings-content">
+      <n-flex>
 
         <!-- MQTT -->
         <n-card size="small" class="settings-card">
-          <template #header>
-            <div class="card-title">
-              <n-icon size="15"><WifiOutlined /></n-icon>
-              MQTT
+
+          <template v-if="!setup" #cover>
+            <div class="card-type-title" :style="{ '--type-color': '#7c4991' }">
+              <span class="type-label">
+                <n-icon size="9"><WifiOutlined /></n-icon>
+                MQTT
+              </span>
             </div>
           </template>
 
           <div class="fields">
+            <br>
             <div class="field-row">
               <span class="field-label">Broker</span>
               <n-input v-model:value="draft.mqtt_broker" placeholder="192.168.1.10" style="width: 220px;" />
@@ -38,7 +43,7 @@
             </div>
 
             <div v-if="supervisorAvailable !== false" class="ha-autofill">
-              <n-button size="small" ghost type="primary" :loading="fetchingSupervisor" @click="fetchSupervisorCreds">
+              <n-button size="small" quaternary type="primary" :loading="fetchingSupervisor" @click="fetchSupervisorCreds">
                 <template #icon><n-icon><HomeOutlined /></n-icon></template>
                 Fill from Home Assistant
               </n-button>
@@ -48,14 +53,18 @@
 
         <!-- Retention -->
         <n-card size="small" class="settings-card">
-          <template #header>
-            <div class="card-title">
-              <n-icon size="15"><StorageOutlined /></n-icon>
-              Retention
+
+          <template v-if="!setup" #cover>
+            <div class="card-type-title" :style="{ '--type-color': '#498691' }">
+              <span class="type-label">
+                <n-icon size="9"><StorageOutlined /></n-icon>
+                Retention
+              </span>
             </div>
           </template>
 
           <div class="fields">
+            <br>
             <div class="field-row">
               <div class="field-label-col">
                 <span class="field-label">Max history entries</span>
@@ -73,24 +82,24 @@
           </div>
         </n-card>
 
-        <!-- Actions -->
-        <div class="action-row">
+      </n-flex>
+      <!-- Actions -->
+      <br>
+      <div class="action-row">
           <n-button round :loading="saving" type="primary" @click="save">Save</n-button>
           <n-button round :loading="restarting" @click="saveAndRestart">
             <template #icon><n-icon><RefreshOutlined /></n-icon></template>
             Save &amp; Apply MQTT
           </n-button>
         </div>
-
-      </div>
     </n-spin>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { NCard, NDivider, NInput, NInputNumber, NButton, NIcon, NSpin, useMessage } from 'naive-ui';
-import { HomeOutlined, RefreshOutlined, WifiOutlined, StorageOutlined } from '@vicons/material';
+import {NCard, NDivider, NInput, NInputNumber, NButton, NIcon, NSpin, useMessage, NFlex, NDropdown} from 'naive-ui';
+import {HomeOutlined, RefreshOutlined, WifiOutlined, StorageOutlined, MoreVertFilled} from '@vicons/material';
 import { apiService } from '@/services/api';
 
 const message = useMessage();
@@ -189,17 +198,21 @@ onMounted(load);
 
 <style scoped>
 .settings-view {
-  max-width: 480px;
 }
-
-.settings-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .settings-card {
-  border-radius: 12px !important;
+  min-width: 350px;
+  width: 30%;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .card-title {
@@ -255,4 +268,27 @@ onMounted(load);
   gap: 8px;
   margin-top: 4px;
 }
+
+
+.card-type-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background-color: rgba(125, 125, 125, 0.1);
+  padding: 2px 6px 2px 0;
+  color: var(--type-color);
+}
+
+.type-label {
+  flex: 1;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  padding-left: 24px; /* balance the menu button width */
+}
+
+
 </style>

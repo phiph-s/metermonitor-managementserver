@@ -1,22 +1,31 @@
 <template>
-  <n-flex vertical>
+  <n-flex vertical style="max-width: 100%;">
     <n-card size="small" class="meter-card" :class="{ 'state-error': hasError, 'state-warning': !hasBB && !setup }" :style="setup?'width: 375px;':''">
       <template #header>
         <div class="card-header">
           <div class="title-group">
-            <span class="card-title" :title="meter_name">{{ meter_name }}</span>
-            <span class="source-pill" :style="{ '--pill-color': sourceColor }">
-              <n-icon size="14"><component :is="sourceIcon" /></n-icon>
-              <span>{{ sourceLabel }}</span>
-            </span>
+            <n-flex :wrap="false">
+              <img class="last-image" :src="last_image" :alt="meter_name" v-if="last_image" />
+              <div>
+                <span class="card-title" :title="meter_name">{{ meter_name }}</span>
+                <span class="source-pill" :style="{ '--pill-color': sourceColor }">
+                  <n-icon size="14"><component :is="sourceIcon" /></n-icon>
+                  <span>{{ sourceLabel }}</span>
+                </span>
+                <span class="source-pill" :style="{ '--pill-color': 'rgba(57,56,56,0.61)' }">
+                  <n-icon size="14"><AccessTimeFilled/></n-icon>
+                  <n-tooltip trigger="hover" placement="bottom">
+                    <template #trigger>
+                      <span>{{ last_updated_relative }}</span>
+                    </template>
+                    {{ last_updated_locale }}
+                  </n-tooltip>
+                </span>
+              </div>
+            </n-flex>
           </div>
           <div class="header-meta">
-            <n-tooltip trigger="hover" placement="bottom">
-              <template #trigger>
-                <span class="timestamp">{{ last_updated_relative }}</span>
-              </template>
-              {{ last_updated_locale }}
-            </n-tooltip>
+
           </div>
         </div>
       </template>
@@ -35,18 +44,6 @@
       </template>
 
       <SourceCollapse v-if="setup" :source="source"></SourceCollapse>
-
-<!--      <div class="digits-row" v-if="last_digits">-->
-<!--        <img-->
-<!--          v-for="[i, base64] in last_digits.entries()"-->
-<!--          :key="i + 'c'"-->
-<!--          class="digit theme-revert"-->
-<!--          :style="`width:calc(160px / ${last_digits.length});`"-->
-<!--          :src="'data:image/png;base64,' + base64"-->
-<!--          :alt="meter_name"-->
-<!--        />-->
-<!--        <span class="digit" :style="`width:calc(160px / ${last_digits.length});`"></span>-->
-<!--      </div>-->
 
       <div class="result-row" v-if="last_result != null">
         <div class="stat-chip stat-chip--current">
@@ -103,7 +100,7 @@
 <script setup>
 import {NCard, NButton, NFlex, NDropdown, NIcon, NTooltip, useDialog} from 'naive-ui';
 import {defineProps, computed, ref, onMounted, watch} from 'vue';
-import { MoreVertFilled, HomeOutlined, PublicFilled, WifiTetheringOutlined, HelpOutlineOutlined } from '@vicons/material';
+import { MoreVertFilled, HomeOutlined, PublicFilled, WifiTetheringOutlined, HelpOutlineOutlined, AccessTimeFilled } from '@vicons/material';
 import WifiStatus from "@/components/WifiStatus.vue";
 import { useThemeStore } from '@/stores/themeStore';
 import { storeToRefs } from 'pinia';
@@ -119,7 +116,7 @@ const props = defineProps([
     'meter_name',
     'last_updated', // eg "2025-02-04T03:15:31"
     'setup',
-    'last_digits',
+    'last_image',
     'last_result',
     'rssi',
     'last_error',
@@ -273,7 +270,8 @@ const formatConsumption = (rawValue) => {
 
 <style scoped>
 .meter-card {
-  width: 300px;
+  max-width: 100%;
+  width: 375px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -342,19 +340,19 @@ const formatConsumption = (rawValue) => {
   opacity: 0.6;
 }
 
-.digits-row {
-  display: flex;
-  justify-content: space-around;
+.last-image-row {
   margin-top: 6px;
   margin-bottom: 4px;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.digit {
-  margin: 3px;
-  height: 40px;
-  mix-blend-mode: screen;
-  opacity: 0.7;
-  border-radius: 3px;
+.last-image {
+  height: 64px;
+  width:64px;
+  display: block;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 .result-row {

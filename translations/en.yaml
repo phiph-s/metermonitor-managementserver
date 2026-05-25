@@ -10,10 +10,10 @@ configuration:
     description: Used for authentication
   max_history:
     name: Maximum History retention
-    description: Maximum number of records to keep in the database
+    description: "DEPRECATED: Moved to Settings in the app"
   max_evals:
     name: Maximum Evaluations
-    description: Maximum number of detailed evaluations to keep in the database
+    description: "DEPRECATED: Moved to Settings in the app"
   allow_negative_correction:
     name: Allow Negative Correction
     description: Allow negative flow in rare cases in the correction calculation
@@ -27,5 +27,5 @@ configuration:
     name: MQTT Publish Topic
     description: Topic to publish the data to (default is compatible with Home Assistants Mosquitto addons device-auto-discorvery)
   mqtt:
-    name: MQTT Server
-    description: MQTT Server to connect to, default is the Home Assistants internal ip
+    name: MQTT Server (Deprecated)
+    description: "DEPRECATED: Moved to Settings in the app"

@@ -481,6 +481,13 @@ def run_migrations(db_file, initial_config=None):
             cursor.execute("ALTER TABLE settings ADD COLUMN use_correctional_alg BOOLEAN DEFAULT true")
             log("[MIGRATION] Added 'use_correctional_alg' column to 'settings' table")
 
+        # add picture_thumbnail column to watermeters table
+        cursor.execute("PRAGMA table_info(watermeters)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'picture_thumbnail' not in columns:
+            cursor.execute("ALTER TABLE watermeters ADD COLUMN picture_thumbnail TEXT DEFAULT NULL")
+            log("[MIGRATION] Added 'picture_thumbnail' column to 'watermeters' table")
+
         # add meter_type and unit columns to watermeters table
         cursor.execute("PRAGMA table_info(watermeters)")
         columns = [info[1] for info in cursor.fetchall()]

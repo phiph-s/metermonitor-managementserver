@@ -13,6 +13,7 @@ from PIL import Image
 
 from lib.functions import reevaluate_latest_picture, publish_registration
 from lib.model_singleton import get_meter_predictor
+from lib.capture_utils import make_thumbnail
 import traceback
 
 from lib.global_alerts import add_alert, remove_alert
@@ -209,6 +210,7 @@ class MQTTHandler:
                 fmt_hint=(data['picture'].get('format') or fmt_from_prefix)
             )
             picture_length = len(image_bytes)
+            picture_thumbnail = make_thumbnail(image_bytes, picture_format)
             wifi_rssi = data.get('WiFi-RSSI')
 
             with sqlite3.connect(self.db_file, timeout=30) as conn:
@@ -221,8 +223,8 @@ class MQTTHandler:
 
                 if not meter_exists:
                     cursor.execute('''
-                        INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, picture_timestamp, picture_width, picture_height, picture_length, picture_data, setup, picture_data_bbox)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,NULL)
+                        INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, picture_timestamp, picture_width, picture_height, picture_length, picture_data, picture_thumbnail, setup, picture_data_bbox)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)
                     ''', (
                         data['name'],
                         1,
@@ -233,6 +235,7 @@ class MQTTHandler:
                         picture_height,
                         picture_length,
                         picture_data_b64,
+                        picture_thumbnail,
                         0
                     ))
                     cursor.execute('''
@@ -267,16 +270,17 @@ class MQTTHandler:
                 else:
                     next_picture_number = int(row[0] or 0) + 1
                     cursor.execute('''
-                            UPDATE watermeters 
-                            SET 
-                                picture_number = ?, 
-                                wifi_rssi = ?, 
-                                picture_format = ?, 
-                                picture_timestamp = ?, 
-                                picture_width = ?, 
-                                picture_height = ?, 
-                                picture_length = ?, 
+                            UPDATE watermeters
+                            SET
+                                picture_number = ?,
+                                wifi_rssi = ?,
+                                picture_format = ?,
+                                picture_timestamp = ?,
+                                picture_width = ?,
+                                picture_height = ?,
+                                picture_length = ?,
                                 picture_data = ?,
+                                picture_thumbnail = ?,
                                 picture_data_bbox = NULL
                             WHERE name = ?
                         ''', (
@@ -288,6 +292,7 @@ class MQTTHandler:
                         picture_height,
                         picture_length,
                         picture_data_b64,
+                        picture_thumbnail,
                         data['name']
                     ))
 

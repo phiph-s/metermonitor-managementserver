@@ -142,9 +142,26 @@ def capture_from_http_source(source_config):
 
     return raw, fmt, False
 
+def make_thumbnail(raw_bytes: bytes, fmt: str, max_px: int = 480) -> str:
+    """Resize image to fit within max_px, return as base64 data URI string."""
+    img = Image.open(BytesIO(raw_bytes))
+    w, h = img.size
+    if w > max_px or h > max_px:
+        scale = max_px / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    out_fmt = (fmt or 'jpeg').split('/')[-1].upper()
+    if out_fmt not in ('JPEG', 'PNG', 'WEBP'):
+        out_fmt = 'JPEG'
+    buf = BytesIO()
+    img.save(buf, format=out_fmt)
+    mime = f"image/{out_fmt.lower()}"
+    return f"data:{mime};base64,{base64.b64encode(buf.getvalue()).decode()}"
+
+
 def process_captured_image(db_file, name, raw_image, format_, config, meter_predictor, publish=True, mqtt_client=None):
     """Process the captured image: save to DB and reevaluate."""
     b64 = base64.b64encode(raw_image).decode('utf-8')
+    thumbnail = make_thumbnail(raw_image, format_)
     img = Image.open(BytesIO(raw_image))
     width, height = img.size
     timestamp = datetime.datetime.now().isoformat()
@@ -167,6 +184,7 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                     picture_height = ?,
                     picture_length = ?,
                     picture_data = ?,
+                    picture_thumbnail = ?,
                     picture_data_bbox = NULL
                 WHERE name = ?
             ''', (
@@ -176,12 +194,13 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                 height,
                 len(raw_image),
                 b64,
+                thumbnail,
                 name
             ))
         else:
             cursor.execute('''
-                INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, picture_timestamp, picture_width, picture_height, picture_length, picture_data, setup, picture_data_bbox)
-                VALUES (?,?,?,?,?,?,?,?,?,?,NULL)
+                INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, picture_timestamp, picture_width, picture_height, picture_length, picture_data, picture_thumbnail, setup, picture_data_bbox)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)
             ''', (
                 name,
                 1,
@@ -192,6 +211,7 @@ def process_captured_image(db_file, name, raw_image, format_, config, meter_pred
                 height,
                 len(raw_image),
                 b64,
+                thumbnail,
                 0
             ))
             cursor.execute('''

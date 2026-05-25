@@ -1,7 +1,7 @@
 <template>
   <n-tooltip>
     <template #trigger>
-      <n-tag :type="tagType" size="large" round>
+      <n-tag :type="tagType" round>
         <NIcon>
           <template #default>
             <component :is="iconComponent" />

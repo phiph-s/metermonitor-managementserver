@@ -1,280 +1,283 @@
 <template>
-  <div class="flash-device">
-    <!-- Stepper -->
-    <n-steps :current="step" size="small" class="flash-steps">
-      <n-step title="Prepare" description="Clone / update firmware" />
-      <n-step title="Configure" description="Set device options" />
-      <n-step title="Build" description="Compile firmware" />
-      <n-step title="Flash" description="Flash via WebSerial" />
-    </n-steps>
-
-    <!-- ───────────────────────────── Step 1: Prepare ───────────────────────────── -->
-    <div v-if="step === 1" class="step-body">
-      <n-card size="small">
-        <template #header>Firmware Repository</template>
-        <n-space vertical size="medium">
-          <div v-if="firmwareReady" class="status-row">
-            <n-icon color="#18a058"><CheckCircleOutlined /></n-icon>
-            <span>Repository available at <code>{{ FIRMWARE_DIR }}</code></span>
-          </div>
-          <div v-else class="status-row">
-            <n-icon color="#f0a020"><InfoOutlined /></n-icon>
-            <span>Repository not yet cloned.</span>
-          </div>
-          <n-space>
-            <n-button type="primary" :loading="preparing" @click="doPrepare">
-              {{ firmwareReady ? 'Pull latest changes' : 'Clone repository' }}
-            </n-button>
-            <n-button v-if="firmwareReady" :disabled="preparing" @click="step = 2">
-              Next: Configure →
-            </n-button>
-          </n-space>
-          <div v-if="prepareOutput" class="log-block"><pre>{{ prepareOutput }}</pre></div>
-          <n-alert v-if="prepareError" type="error" :title="prepareError" />
-        </n-space>
-      </n-card>
-    </div>
-
-    <!-- ───────────────────────────── Step 2: Configure ─────────────────────────── -->
-    <div v-if="step === 2" class="step-body">
-      <n-spin :show="loadingKconfig">
+  <n-flex class="flash-device" justify="space-around">
+    <div style="max-width: 800px;">
+      <!-- Stepper -->
+      <n-flex style="width: 100%;">
+        <n-steps :current="step" size="small" class="flash-steps">
+          <n-step title="Prepare" description="Clone / update firmware" />
+          <n-step title="Configure" description="Set device options" />
+          <n-step title="Build" description="Compile firmware" />
+          <n-step title="Flash" description="Flash via WebSerial" />
+        </n-steps>
+      </n-flex>
+      <!-- ───────────────────────────── Step 1: Prepare ───────────────────────────── -->
+      <div v-if="step === 1" class="step-body">
         <n-card size="small">
-          <template #header>
-            <n-flex align="center" justify="space-between">
-              <span>MeterMonitor Configuration</span>
-              <n-flex align="center" gap="8">
-                <n-text v-if="saveNotice" depth="2" style="font-size:12px;color:#18a058;">
-                  {{ saveNotice }}
-                </n-text>
-                <n-button
-                  v-if="hasSavedConfig"
-                  size="tiny"
-                  @click="loadSavedConfig"
-                >
-                  Load saved
-                </n-button>
-                <n-button
-                  size="tiny"
-                  type="primary"
-                  :disabled="kconfigOptions.length === 0"
-                  @click="saveConfig"
-                >
-                  Save for later
-                </n-button>
-                <n-divider vertical style="height:16px;margin:0 2px;" />
-                <n-flex align="center" gap="4">
-                  <n-switch v-model:value="advancedMode" size="small" />
-                  <n-text depth="3" style="font-size:12px;">Advanced</n-text>
+          <template #header>Firmware Repository</template>
+          <n-space vertical size="medium">
+            <div v-if="firmwareReady" class="status-row">
+              <n-icon color="#18a058"><CheckCircleOutlined /></n-icon>
+              <span>Repository available at <code>{{ FIRMWARE_DIR }}</code></span>
+            </div>
+            <div v-else class="status-row">
+              <n-icon color="#f0a020"><InfoOutlined /></n-icon>
+              <span>Repository not yet cloned.</span>
+            </div>
+            <n-space>
+              <n-button type="primary" :loading="preparing" @click="doPrepare">
+                {{ firmwareReady ? 'Pull latest changes' : 'Clone repository' }}
+              </n-button>
+              <n-button v-if="firmwareReady" :disabled="preparing" @click="step = 2">
+                Next: Configure →
+              </n-button>
+            </n-space>
+            <div v-if="prepareOutput" class="log-block"><pre>{{ prepareOutput }}</pre></div>
+            <n-alert v-if="prepareError" type="error" :title="prepareError" />
+          </n-space>
+        </n-card>
+      </div>
+
+      <!-- ───────────────────────────── Step 2: Configure ─────────────────────────── -->
+      <div v-if="step === 2" class="step-body">
+        <n-spin :show="loadingKconfig">
+          <n-card size="small">
+            <template #header>
+              <n-flex align="center" justify="space-between">
+                <span>MeterMonitor Configuration</span>
+                <n-flex align="center" gap="8">
+                  <n-text v-if="saveNotice" depth="2" style="font-size:12px;color:#18a058;">
+                    {{ saveNotice }}
+                  </n-text>
+                  <n-button
+                    v-if="hasSavedConfig"
+                    size="tiny"
+                    @click="loadSavedConfig"
+                  >
+                    Load saved
+                  </n-button>
+                  <n-button
+                    size="tiny"
+                    type="primary"
+                    :disabled="kconfigOptions.length === 0"
+                    @click="saveConfig"
+                  >
+                    Save for later
+                  </n-button>
+                  <n-divider vertical style="height:16px;margin:0 2px;" />
+                  <n-flex align="center" gap="4">
+                    <n-switch v-model:value="advancedMode" size="small" />
+                    <n-text depth="3" style="font-size:12px;">Advanced</n-text>
+                  </n-flex>
                 </n-flex>
               </n-flex>
-            </n-flex>
-          </template>
+            </template>
 
-          <n-empty
-            v-if="!loadingKconfig && kconfigOptions.length === 0"
-            description="No MeterMonitor config options found in the repository."
-            style="padding: 32px 0;"
-          />
+            <n-empty
+              v-if="!loadingKconfig && kconfigOptions.length === 0"
+              description="No MeterMonitor config options found in the repository."
+              style="padding: 32px 0;"
+            />
 
-          <!-- Sections -->
-          <n-collapse
-            v-else
-            :default-expanded-names="SECTION_ORDER"
-            class="config-collapse"
-          >
-            <n-collapse-item
-              v-for="sec in optionsBySection"
-              :key="sec.key"
-              :name="sec.key"
+            <!-- Sections -->
+            <n-collapse
+              v-else
+              :default-expanded-names="SECTION_ORDER"
+              class="config-collapse"
             >
-              <template #header>
-                <n-flex align="center" gap="8">
-                  <n-icon size="15"><component :is="SECTION_ICONS[sec.key]" /></n-icon>
-                  <span class="section-title">{{ sec.label }}</span>
-                  <n-text depth="3" style="font-size:11px;">{{ sec.options.length }}</n-text>
-                </n-flex>
-              </template>
+              <n-collapse-item
+                v-for="sec in optionsBySection"
+                :key="sec.key"
+                :name="sec.key"
+              >
+                <template #header>
+                  <n-flex align="center" gap="8">
+                    <n-icon size="15"><component :is="SECTION_ICONS[sec.key]" /></n-icon>
+                    <span class="section-title">{{ sec.label }}</span>
+                    <n-text depth="3" style="font-size:11px;">{{ sec.options.length }}</n-text>
+                  </n-flex>
+                </template>
 
-              <div class="section-options">
-                <div
-                  v-for="opt in sec.options"
-                  :key="opt.name"
-                  class="config-row"
-                >
-                  <!-- Label column -->
-                  <div class="config-label-col">
-                    <span class="config-label-text">{{ opt.label }}</span>
-                    <n-tooltip
-                      v-if="opt.help"
-                      trigger="hover"
-                      placement="right"
-                      :style="{ maxWidth: '300px' }"
-                    >
-                      <template #trigger>
-                        <n-icon size="13" class="help-icon"><HelpOutlineOutlined /></n-icon>
-                      </template>
-                      <span style="white-space:pre-wrap; font-size:12px;">{{ opt.help }}</span>
-                    </n-tooltip>
-                    <span class="config-name-badge">{{ opt.name }}</span>
-                  </div>
+                <div class="section-options">
+                  <div
+                    v-for="opt in sec.options"
+                    :key="opt.name"
+                    class="config-row"
+                  >
+                    <!-- Label column -->
+                    <div class="config-label-col">
+                      <span class="config-label-text">{{ opt.label }}</span>
+                      <n-tooltip
+                        v-if="opt.help"
+                        trigger="hover"
+                        placement="right"
+                        :style="{ maxWidth: '300px' }"
+                      >
+                        <template #trigger>
+                          <n-icon size="13" class="help-icon"><HelpOutlineOutlined /></n-icon>
+                        </template>
+                        <span style="white-space:pre-wrap; font-size:12px;">{{ opt.help }}</span>
+                      </n-tooltip>
+                      <span class="config-name-badge">{{ opt.name }}</span>
+                    </div>
 
-                  <!-- Input column -->
-                  <div class="config-input-col">
-                    <!-- choice → dropdown -->
-                    <n-select
-                      v-if="opt.type === 'choice'"
-                      v-model:value="configValues[opt.name]"
-                      size="small"
-                      :options="opt.choices.map(c => ({ label: c.label, value: c.name }))"
-                      style="min-width: 220px;"
-                    />
+                    <!-- Input column -->
+                    <div class="config-input-col">
+                      <!-- choice → dropdown -->
+                      <n-select
+                        v-if="opt.type === 'choice'"
+                        v-model:value="configValues[opt.name]"
+                        size="small"
+                        :options="opt.choices.map(c => ({ label: c.label, value: c.name }))"
+                        style="min-width: 220px;"
+                      />
 
-                    <!-- bool → switch -->
-                    <n-switch v-else-if="opt.type === 'bool'" v-model:value="configValues[opt.name]" />
+                      <!-- bool → switch -->
+                      <n-switch v-else-if="opt.type === 'bool'" v-model:value="configValues[opt.name]" />
 
-                    <!-- password → masked input -->
-                    <n-input
-                      v-else-if="isPassword(opt)"
-                      v-model:value="configValues[opt.name]"
-                      type="password"
-                      show-password-on="click"
-                      size="small"
-                      :placeholder="opt.default !== null && opt.default !== undefined ? String(opt.default) : ''"
-                      style="width: 260px;"
-                    />
+                      <!-- password → masked input -->
+                      <n-input
+                        v-else-if="isPassword(opt)"
+                        v-model:value="configValues[opt.name]"
+                        type="password"
+                        show-password-on="click"
+                        size="small"
+                        :placeholder="opt.default !== null && opt.default !== undefined ? String(opt.default) : ''"
+                        style="width: 260px;"
+                      />
 
-                    <!-- int / hex → number -->
-                    <n-input-number
-                      v-else-if="opt.type === 'int' || opt.type === 'hex'"
-                      v-model:value="configValues[opt.name]"
-                      size="small"
-                      :min="opt.range ? Number(opt.range[0]) : undefined"
-                      :max="opt.range ? Number(opt.range[1]) : undefined"
-                      :placeholder="opt.default !== null ? String(opt.default) : ''"
-                      style="width: 130px;"
-                    />
+                      <!-- int / hex → number -->
+                      <n-input-number
+                        v-else-if="opt.type === 'int' || opt.type === 'hex'"
+                        v-model:value="configValues[opt.name]"
+                        size="small"
+                        :min="opt.range ? Number(opt.range[0]) : undefined"
+                        :max="opt.range ? Number(opt.range[1]) : undefined"
+                        :placeholder="opt.default !== null ? String(opt.default) : ''"
+                        style="width: 130px;"
+                      />
 
-                    <!-- string → text -->
-                    <n-input
-                      v-else
-                      v-model:value="configValues[opt.name]"
-                      size="small"
-                      :placeholder="opt.default !== null && opt.default !== undefined ? String(opt.default) : ''"
-                      style="width: 260px;"
-                    />
+                      <!-- string → text -->
+                      <n-input
+                        v-else
+                        v-model:value="configValues[opt.name]"
+                        size="small"
+                        :placeholder="opt.default !== null && opt.default !== undefined ? String(opt.default) : ''"
+                        style="width: 260px;"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            </n-collapse-item>
-          </n-collapse>
+              </n-collapse-item>
+            </n-collapse>
 
+            <template #footer>
+              <n-flex justify="space-between">
+                <n-button @click="step = 1">← Back</n-button>
+                <n-button type="primary" :disabled="kconfigOptions.length === 0" @click="doBuild">
+                  Build Firmware →
+                </n-button>
+              </n-flex>
+            </template>
+          </n-card>
+        </n-spin>
+      </div>
+
+      <!-- ───────────────────────────── Step 3: Build ──────────────────────────────── -->
+      <div v-if="step === 3" class="step-body">
+        <n-card size="small">
+          <template #header>
+            <n-flex align="center" gap="8">
+              <span>Build Output</span>
+              <n-spin v-if="building" :size="14" />
+              <n-tag v-if="buildDone && buildSuccess" type="success" size="small">Success</n-tag>
+              <n-tag v-if="buildDone && !buildSuccess" type="error" size="small">Failed</n-tag>
+            </n-flex>
+          </template>
+          <div class="build-terminal" ref="buildTerminalEl">
+            <pre>{{ buildOutput }}</pre>
+          </div>
           <template #footer>
             <n-flex justify="space-between">
-              <n-button @click="step = 1">← Back</n-button>
-              <n-button type="primary" :disabled="kconfigOptions.length === 0" @click="doBuild">
-                Build Firmware →
-              </n-button>
+              <n-button @click="step = 2">← Back to Configure</n-button>
+              <n-space v-if="buildDone">
+                <n-button v-if="!buildSuccess" :loading="building" @click="doBuild">Retry Build</n-button>
+                <n-button v-if="buildSuccess" type="primary" @click="step = 4">Flash Device →</n-button>
+              </n-space>
             </n-flex>
           </template>
         </n-card>
-      </n-spin>
+      </div>
+
+      <!-- ───────────────────────────── Step 4: Flash ──────────────────────────────── -->
+      <div v-if="step === 4" class="step-body">
+        <n-card size="small">
+          <template #header>Flash via WebSerial</template>
+          <n-space vertical size="medium">
+            <n-alert v-if="!webSerialSupported" type="warning" title="WebSerial not supported">
+              Please use <strong>Chrome</strong> or <strong>Edge</strong> (v89+).
+            </n-alert>
+            <n-alert v-else type="info" title="Before connecting">
+              <ul style="margin:4px 0;padding-left:18px;">
+                <li>Hold the <strong>BOOT</strong> button while plugging in the USB cable</li>
+                <li>Release once connected, then select the correct port</li>
+              </ul>
+            </n-alert>
+            <n-flex v-if="!flashing && !flashSuccess" align="center" gap="8">
+              <n-button type="primary" :disabled="!webSerialSupported" @click="doFlash">
+                Connect &amp; Flash
+              </n-button>
+              <n-select
+                v-model:value="baudRate"
+                :options="BAUD_RATES"
+                size="small"
+                style="width:130px;"
+              />
+              <n-text depth="3" style="font-size:11px;">baud rate</n-text>
+              <n-button @click="step = 3">← Back to Build</n-button>
+            </n-flex>
+            <div v-if="flashProgress !== null" class="flash-progress">
+              <n-progress type="line" :percentage="flashProgress" :height="10" :border-radius="5" :processing="flashing" />
+              <span class="flash-progress-label">{{ flashProgressLabel }}</span>
+            </div>
+            <div v-if="flashLog.length > 0" class="flash-log">
+              <div v-for="(line, i) in flashLog" :key="i" class="flash-log-line">{{ line }}</div>
+            </div>
+            <n-alert v-if="flashSuccess" type="success" title="Flashed successfully! Device will restart." />
+            <n-alert v-if="flashError" type="error" :title="flashError" />
+            <n-button v-if="flashSuccess || flashError" @click="resetFlash">Flash again</n-button>
+
+            <n-divider style="margin: 4px 0;" />
+
+            <!-- Serial monitor -->
+            <n-flex align="center" gap="8">
+              <n-button
+                v-if="!monitorActive"
+                :disabled="!webSerialSupported || flashing"
+                size="small"
+                @click="startMonitor"
+              >
+                View Device Logs
+              </n-button>
+              <n-button v-else size="small" type="error" @click="stopMonitor">
+                Stop Monitor
+              </n-button>
+              <n-select
+                v-model:value="monitorBaudRate"
+                :options="BAUD_RATES"
+                size="small"
+                style="width:130px;"
+                :disabled="monitorActive"
+              />
+              <n-text depth="3" style="font-size:11px;">monitor baud</n-text>
+            </n-flex>
+            <div v-if="monitorActive || monitorOutput" class="build-terminal" ref="monitorEl">
+              <pre>{{ monitorOutput }}</pre>
+            </div>
+          </n-space>
+        </n-card>
+      </div>
     </div>
-
-    <!-- ───────────────────────────── Step 3: Build ──────────────────────────────── -->
-    <div v-if="step === 3" class="step-body">
-      <n-card size="small">
-        <template #header>
-          <n-flex align="center" gap="8">
-            <span>Build Output</span>
-            <n-spin v-if="building" :size="14" />
-            <n-tag v-if="buildDone && buildSuccess" type="success" size="small">Success</n-tag>
-            <n-tag v-if="buildDone && !buildSuccess" type="error" size="small">Failed</n-tag>
-          </n-flex>
-        </template>
-        <div class="build-terminal" ref="buildTerminalEl">
-          <pre>{{ buildOutput }}</pre>
-        </div>
-        <template #footer>
-          <n-flex justify="space-between">
-            <n-button @click="step = 2">← Back to Configure</n-button>
-            <n-space v-if="buildDone">
-              <n-button v-if="!buildSuccess" :loading="building" @click="doBuild">Retry Build</n-button>
-              <n-button v-if="buildSuccess" type="primary" @click="step = 4">Flash Device →</n-button>
-            </n-space>
-          </n-flex>
-        </template>
-      </n-card>
-    </div>
-
-    <!-- ───────────────────────────── Step 4: Flash ──────────────────────────────── -->
-    <div v-if="step === 4" class="step-body">
-      <n-card size="small">
-        <template #header>Flash via WebSerial</template>
-        <n-space vertical size="medium">
-          <n-alert v-if="!webSerialSupported" type="warning" title="WebSerial not supported">
-            Please use <strong>Chrome</strong> or <strong>Edge</strong> (v89+).
-          </n-alert>
-          <n-alert v-else type="info" title="Before connecting">
-            <ul style="margin:4px 0;padding-left:18px;">
-              <li>Hold the <strong>BOOT</strong> button while plugging in the USB cable</li>
-              <li>Release once connected, then select the correct port</li>
-            </ul>
-          </n-alert>
-          <n-flex v-if="!flashing && !flashSuccess" align="center" gap="8">
-            <n-button type="primary" :disabled="!webSerialSupported" @click="doFlash">
-              Connect &amp; Flash
-            </n-button>
-            <n-select
-              v-model:value="baudRate"
-              :options="BAUD_RATES"
-              size="small"
-              style="width:130px;"
-            />
-            <n-text depth="3" style="font-size:11px;">baud rate</n-text>
-            <n-button @click="step = 3">← Back to Build</n-button>
-          </n-flex>
-          <div v-if="flashProgress !== null" class="flash-progress">
-            <n-progress type="line" :percentage="flashProgress" :height="10" :border-radius="5" :processing="flashing" />
-            <span class="flash-progress-label">{{ flashProgressLabel }}</span>
-          </div>
-          <div v-if="flashLog.length > 0" class="flash-log">
-            <div v-for="(line, i) in flashLog" :key="i" class="flash-log-line">{{ line }}</div>
-          </div>
-          <n-alert v-if="flashSuccess" type="success" title="Flashed successfully! Device will restart." />
-          <n-alert v-if="flashError" type="error" :title="flashError" />
-          <n-button v-if="flashSuccess || flashError" @click="resetFlash">Flash again</n-button>
-
-          <n-divider style="margin: 4px 0;" />
-
-          <!-- Serial monitor -->
-          <n-flex align="center" gap="8">
-            <n-button
-              v-if="!monitorActive"
-              :disabled="!webSerialSupported || flashing"
-              size="small"
-              @click="startMonitor"
-            >
-              View Device Logs
-            </n-button>
-            <n-button v-else size="small" type="error" @click="stopMonitor">
-              Stop Monitor
-            </n-button>
-            <n-select
-              v-model:value="monitorBaudRate"
-              :options="BAUD_RATES"
-              size="small"
-              style="width:130px;"
-              :disabled="monitorActive"
-            />
-            <n-text depth="3" style="font-size:11px;">monitor baud</n-text>
-          </n-flex>
-          <div v-if="monitorActive || monitorOutput" class="build-terminal" ref="monitorEl">
-            <pre>{{ monitorOutput }}</pre>
-          </div>
-        </n-space>
-      </n-card>
-    </div>
-  </div>
+  </n-flex>
 </template>
 
 <script setup>
@@ -782,9 +785,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.flash-device { max-width: 900px; }
+.flash-device { width: 100%; }
 .flash-steps  { margin-bottom: 20px; }
-.step-body    { margin-top: 4px; }
+.step-body    { margin-top: 4px; width: 800px; }
 
 /* ── log / terminal ── */
 .log-block {

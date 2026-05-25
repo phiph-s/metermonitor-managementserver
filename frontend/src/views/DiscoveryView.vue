@@ -76,7 +76,7 @@
           :meter_name="item[0]"
           :setup="false"
           :rssi="item[2]"
-          :last_digits="item[4]"
+          :last_image="item[4]"
           :last_result="item[3]"
           :has_bbox="item[5]"
           :decimals="item[6]"
@@ -166,7 +166,7 @@ const getData = async () => {
   sources.value = sourcesData;
 
   // Add last_error and source_type from sources to watermeters
-  // Backend tuple: [name(0), timestamp(1), rssi(2), result(3), th_digits(4), has_bbox(5), decimals(6), meter_type(7), unit(8)]
+  // Backend tuple: [name(0), timestamp(1), rssi(2), result(3), last_image(4), has_bbox(5), decimals(6), meter_type(7), unit(8)]
   // After JS merge: [..., last_error(9), source_type(10)]
   waterMeters.value = waterMeters.value.map(meter => {
     const source = sourcesData.find(s => s.name === meter[0]);
