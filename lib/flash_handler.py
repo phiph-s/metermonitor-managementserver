@@ -515,6 +515,53 @@ def _find_idf_venv_python(env: dict) -> str:
     return matches[-1] if matches else sys.executable
 
 
+def _apply_idf_cmake_workarounds(idf_path: str) -> None:
+    """
+    Patch known ESP-IDF cmake bugs that surface at build time, not at image-build time.
+
+    1. gdbinit.cmake iterates git submodules with an unquoted cmake variable:
+           file(TO_CMAKE_PATH ${dir} result)
+       When `git submodule foreach` returns nothing (non-submodule git init),
+       ${dir} expands to zero tokens → CMake error "must be called with exactly
+       three arguments."  The file is only needed for interactive GDB sessions,
+       never for building, so we replace it with a no-op stub.
+
+    2. GetGitRevisionDescription writes a head-ref file by running
+           git rev-parse HEAD
+       in $IDF_PATH.  If that repo has no commits (bare `git init` without a
+       commit), HEAD is unresolvable, the file is never written, and the
+       subsequent include() fails.  We create a minimal tagged empty commit so
+       rev-parse succeeds.
+    """
+    # ── 1. gdbinit.cmake stub ──────────────────────────────────────────────
+    gdbinit = os.path.join(idf_path, "tools", "cmake", "gdbinit.cmake")
+    if os.path.isfile(gdbinit):
+        with open(gdbinit) as f:
+            content = f.read()
+        if "TO_CMAKE_PATH ${dir}" in content or "submodule foreach" in content:
+            with open(gdbinit, "w") as f:
+                f.write("function(__generate_gdbinit)\nendfunction()\n")
+
+    # ── 2. Ensure IDF git repo has a HEAD-resolvable commit ───────────────
+    git_dir = os.path.join(idf_path, ".git")
+    if not os.path.isdir(git_dir):
+        return
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=idf_path,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return  # already fine
+    # No valid HEAD — create a minimal empty commit so cmake can resolve it.
+    for cmd in (
+        ["git", "-C", idf_path, "init", "-q"],
+        ["git", "-C", idf_path, "-c", "user.email=b@b", "-c", "user.name=b",
+         "commit", "--allow-empty", "-q", "-m", "esp-idf"],
+    ):
+        subprocess.run(cmd, capture_output=True)
+
+
 async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None]:
     apply_sdkconfig(config_values)
 
@@ -526,6 +573,8 @@ async def build_firmware_stream(config_values: dict) -> AsyncGenerator[str, None
         )
         yield "__BUILD_FAILED__1__\n"
         return
+
+    _apply_idf_cmake_workarounds(idf_path)
 
     idf_py = os.path.join(idf_path, "tools", "idf.py")
 

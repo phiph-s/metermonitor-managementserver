@@ -39,11 +39,19 @@ RUN git clone --depth=1 --shallow-submodules --branch ${IDF_VERSION} \
         https://github.com/espressif/esp-idf.git ${IDF_PATH} \
     && cd ${IDF_PATH} \
     && ./install.sh esp32 \
-    # Replace full git history with a bare init so ESP-IDF cmake scripts
-    # (gdbinit.cmake etc.) can still resolve `git rev-parse --show-toplevel`
-    # without the hundreds-of-MB history being present at runtime.
+    # Replace the shallow-clone history with a minimal tagged empty commit so
+    # cmake git queries (GetGitRevisionDescription / grabRef) resolve cleanly.
     && rm -rf ${IDF_PATH}/.git \
     && git -C ${IDF_PATH} init -q \
+    && git -C ${IDF_PATH} -c user.email="b@b" -c user.name="b" \
+           commit --allow-empty -q -m "esp-idf" \
+    && git -C ${IDF_PATH} tag ${IDF_VERSION} \
+    # Stub out gdbinit.cmake: it iterates git submodules with an unquoted cmake
+    # variable (file(TO_CMAKE_PATH ${dir} ...)) which expands to zero args when
+    # submodule foreach returns empty in a non-submodule git init → CMake error.
+    # The gdbinit is only used for interactive GDB sessions, not for building.
+    && printf 'function(__generate_gdbinit)\nendfunction()\n' \
+           > ${IDF_PATH}/tools/cmake/gdbinit.cmake \
     \
     # ── strip tools not needed for compilation ─────────────────────────────
     # Debuggers and JTAG interface
