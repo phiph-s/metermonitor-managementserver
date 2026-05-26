@@ -1,214 +1,193 @@
 <template>
   <n-flex class="flash-device" justify="space-around">
     <div style="max-width: 800px;">
-      <!-- Stepper -->
       <n-flex style="width: 100%;">
         <n-steps :current="step" size="small" class="flash-steps">
-          <n-step title="Prepare" description="Clone / update firmware" />
-          <n-step title="Configure" description="Set device options" />
-          <n-step title="Build" description="Compile firmware" />
-          <n-step title="Flash" description="Flash via WebSerial" />
+          <n-step title="Select"    description="Choose release & board" />
+          <n-step title="Configure" description="Set credentials" />
+          <n-step title="Download"  description="Fetch firmware" />
+          <n-step title="Flash"     description="Flash via WebSerial" />
         </n-steps>
       </n-flex>
-      <!-- ───────────────────────────── Step 1: Prepare ───────────────────────────── -->
+
+      <!-- ── Step 1: Select ─────────────────────────────────────────────── -->
       <div v-if="step === 1" class="step-body">
         <n-card size="small">
-          <template #header>Firmware Repository</template>
+          <template #header>Firmware Release</template>
           <n-space vertical size="medium">
-            <div v-if="firmwareReady" class="status-row">
-              <n-icon color="#18a058"><CheckCircleOutlined /></n-icon>
-              <span>Repository available at <code>{{ FIRMWARE_DIR }}</code></span>
-            </div>
-            <div v-else class="status-row">
-              <n-icon color="#f0a020"><InfoOutlined /></n-icon>
-              <span>Repository not yet cloned.</span>
-            </div>
-            <n-space>
-              <n-button type="primary" :loading="preparing" @click="doPrepare">
-                {{ firmwareReady ? 'Pull latest changes' : 'Clone repository' }}
-              </n-button>
-              <n-button v-if="firmwareReady" :disabled="preparing" @click="step = 2">
+            <n-alert v-if="releasesError" type="error" :title="releasesError" />
+            <n-spin v-if="loadingReleases" />
+            <template v-else-if="releases.length === 0 && !releasesError">
+              <n-empty description="No releases found in the firmware repository." style="padding:32px 0;" />
+            </template>
+            <template v-else>
+              <div class="config-row">
+                <span class="config-label-text">Release</span>
+                <n-select
+                  v-model:value="selectedTag"
+                  :options="releases.map(r => ({ label: r.name || r.tag, value: r.tag }))"
+                  style="width:220px;"
+                  size="small"
+                />
+              </div>
+              <div class="config-row">
+                <span class="config-label-text">Board</span>
+                <n-select
+                  v-model:value="selectedBoard"
+                  :options="selectedRelease?.boards.map(b => ({ label: boardLabels[b] || b, value: b })) ?? []"
+                  :disabled="!selectedTag"
+                  style="width:300px;"
+                  size="small"
+                />
+              </div>
+            </template>
+          </n-space>
+          <template #footer>
+            <n-flex justify="end">
+              <n-button type="primary" :disabled="!selectedTag || !selectedBoard" @click="step = 2">
                 Next: Configure →
               </n-button>
-            </n-space>
-            <div v-if="prepareOutput" class="log-block"><pre>{{ prepareOutput }}</pre></div>
-            <n-alert v-if="prepareError" type="error" :title="prepareError" />
-          </n-space>
+            </n-flex>
+          </template>
         </n-card>
       </div>
 
-      <!-- ───────────────────────────── Step 2: Configure ─────────────────────────── -->
+      <!-- ── Step 2: Configure ──────────────────────────────────────────── -->
       <div v-if="step === 2" class="step-body">
-        <n-spin :show="loadingKconfig">
-          <n-card size="small">
-            <template #header>
-              <n-flex align="center" justify="space-between">
-                <span>MeterMonitor Configuration</span>
-                <n-flex align="center" gap="8">
-                  <n-text v-if="saveNotice" depth="2" style="font-size:12px;color:#18a058;">
-                    {{ saveNotice }}
-                  </n-text>
-                  <n-button
-                    v-if="hasSavedConfig"
-                    size="tiny"
-                    @click="loadSavedConfig"
-                  >
-                    Load saved
-                  </n-button>
-                  <n-button
-                    size="tiny"
-                    type="primary"
-                    :disabled="kconfigOptions.length === 0"
-                    @click="saveConfig"
-                  >
-                    Save for later
-                  </n-button>
-                  <n-divider vertical style="height:16px;margin:0 2px;" />
-                  <n-flex align="center" gap="4">
-                    <n-switch v-model:value="advancedMode" size="small" />
-                    <n-text depth="3" style="font-size:12px;">Advanced</n-text>
-                  </n-flex>
-                </n-flex>
-              </n-flex>
-            </template>
-
-            <n-empty
-              v-if="!loadingKconfig && kconfigOptions.length === 0"
-              description="No MeterMonitor config options found in the repository."
-              style="padding: 32px 0;"
-            />
-
-            <!-- Sections -->
-            <n-collapse
-              v-else
-              :default-expanded-names="SECTION_ORDER"
-              class="config-collapse"
-            >
-              <n-collapse-item
-                v-for="sec in optionsBySection"
-                :key="sec.key"
-                :name="sec.key"
-              >
-                <template #header>
-                  <n-flex align="center" gap="8">
-                    <n-icon size="15"><component :is="SECTION_ICONS[sec.key]" /></n-icon>
-                    <span class="section-title">{{ sec.label }}</span>
-                    <n-text depth="3" style="font-size:11px;">{{ sec.options.length }}</n-text>
-                  </n-flex>
-                </template>
-
-                <div class="section-options">
-                  <div
-                    v-for="opt in sec.options"
-                    :key="opt.name"
-                    class="config-row"
-                  >
-                    <!-- Label column -->
-                    <div class="config-label-col">
-                      <span class="config-label-text">{{ opt.label }}</span>
-                      <n-tooltip
-                        v-if="opt.help"
-                        trigger="hover"
-                        placement="right"
-                        :style="{ maxWidth: '300px' }"
-                      >
-                        <template #trigger>
-                          <n-icon size="13" class="help-icon"><HelpOutlineOutlined /></n-icon>
-                        </template>
-                        <span style="white-space:pre-wrap; font-size:12px;">{{ opt.help }}</span>
-                      </n-tooltip>
-                      <span class="config-name-badge">{{ opt.name }}</span>
-                    </div>
-
-                    <!-- Input column -->
-                    <div class="config-input-col">
-                      <!-- choice → dropdown -->
-                      <n-select
-                        v-if="opt.type === 'choice'"
-                        v-model:value="configValues[opt.name]"
-                        size="small"
-                        :options="opt.choices.map(c => ({ label: c.label, value: c.name }))"
-                        style="min-width: 220px;"
-                      />
-
-                      <!-- bool → switch -->
-                      <n-switch v-else-if="opt.type === 'bool'" v-model:value="configValues[opt.name]" />
-
-                      <!-- password → masked input -->
-                      <n-input
-                        v-else-if="isPassword(opt)"
-                        v-model:value="configValues[opt.name]"
-                        type="password"
-                        show-password-on="click"
-                        size="small"
-                        :placeholder="opt.default !== null && opt.default !== undefined ? String(opt.default) : ''"
-                        style="width: 260px;"
-                      />
-
-                      <!-- int / hex → number -->
-                      <n-input-number
-                        v-else-if="opt.type === 'int' || opt.type === 'hex'"
-                        v-model:value="configValues[opt.name]"
-                        size="small"
-                        :min="opt.range ? Number(opt.range[0]) : undefined"
-                        :max="opt.range ? Number(opt.range[1]) : undefined"
-                        :placeholder="opt.default !== null ? String(opt.default) : ''"
-                        style="width: 130px;"
-                      />
-
-                      <!-- string → text -->
-                      <n-input
-                        v-else
-                        v-model:value="configValues[opt.name]"
-                        size="small"
-                        :placeholder="opt.default !== null && opt.default !== undefined ? String(opt.default) : ''"
-                        style="width: 260px;"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </n-collapse-item>
-            </n-collapse>
-
-            <template #footer>
-              <n-flex justify="space-between">
-                <n-button @click="step = 1">← Back</n-button>
-                <n-button type="primary" :disabled="kconfigOptions.length === 0" @click="doBuild">
-                  Build Firmware →
-                </n-button>
-              </n-flex>
-            </template>
-          </n-card>
-        </n-spin>
-      </div>
-
-      <!-- ───────────────────────────── Step 3: Build ──────────────────────────────── -->
-      <div v-if="step === 3" class="step-body">
         <n-card size="small">
           <template #header>
-            <n-flex align="center" gap="8">
-              <span>Build Output</span>
-              <n-spin v-if="building" :size="14" />
-              <n-tag v-if="buildDone && buildSuccess" type="success" size="small">Success</n-tag>
-              <n-tag v-if="buildDone && !buildSuccess" type="error" size="small">Failed</n-tag>
+            <n-flex align="center" justify="space-between">
+              <span>Device Configuration</span>
+              <n-flex align="center" gap="8">
+                <n-text v-if="saveNotice" depth="2" style="font-size:12px;color:#18a058;">{{ saveNotice }}</n-text>
+                <n-button v-if="hasSavedConfig" size="tiny" @click="loadSavedConfig">Load saved</n-button>
+                <n-button size="tiny" type="primary" @click="saveConfig">Save for later</n-button>
+              </n-flex>
             </n-flex>
           </template>
-          <div class="build-terminal" ref="buildTerminalEl">
-            <pre>{{ buildOutput }}</pre>
-          </div>
+
+          <n-collapse :default-expanded-names="['wifi','mqtt','general']" class="config-collapse">
+            <!-- WiFi -->
+            <n-collapse-item name="wifi">
+              <template #header>
+                <n-flex align="center" gap="8">
+                  <n-icon size="15"><WifiOutlined /></n-icon>
+                  <span class="section-title">WiFi</span>
+                </n-flex>
+              </template>
+              <div class="section-options">
+                <div class="config-row">
+                  <span class="config-label-text">SSID</span>
+                  <n-input v-model:value="cfg.wifi_ssid" size="small" style="width:260px;" placeholder="My Network" />
+                </div>
+                <div class="config-row">
+                  <span class="config-label-text">Password</span>
+                  <n-input v-model:value="cfg.wifi_pass" type="password" show-password-on="click" size="small" style="width:260px;" />
+                </div>
+              </div>
+            </n-collapse-item>
+
+            <!-- MQTT -->
+            <n-collapse-item name="mqtt">
+              <template #header>
+                <n-flex align="center" gap="8">
+                  <n-icon size="15"><CloudOutlined /></n-icon>
+                  <span class="section-title">MQTT</span>
+                </n-flex>
+              </template>
+              <div class="section-options">
+                <div class="config-row">
+                  <span class="config-label-text">Broker URL</span>
+                  <n-input v-model:value="cfg.mqtt_url" size="small" style="width:260px;" placeholder="mqtt://192.168.1.1:1883" />
+                </div>
+                <div class="config-row">
+                  <span class="config-label-text">Username</span>
+                  <n-input v-model:value="cfg.mqtt_user" size="small" style="width:260px;" />
+                </div>
+                <div class="config-row">
+                  <span class="config-label-text">Password</span>
+                  <n-input v-model:value="cfg.mqtt_pass" type="password" show-password-on="click" size="small" style="width:260px;" />
+                </div>
+                <div class="config-row">
+                  <n-flex align="center" gap="6">
+                    <span class="config-label-text">Topic</span>
+                    <n-tooltip trigger="hover">
+                      <template #trigger><n-icon size="13" class="help-icon"><HelpOutlineOutlined /></n-icon></template>
+                      The MQTT topic the device publishes images to.<br>
+                      Commands are received on {topic}/cmd/{capture,flash,interval}.
+                    </n-tooltip>
+                  </n-flex>
+                  <n-input v-model:value="cfg.mqtt_topic" size="small" style="width:260px;" placeholder="MeterMonitor/meter" />
+                </div>
+              </div>
+            </n-collapse-item>
+
+            <!-- General -->
+            <n-collapse-item name="general">
+              <template #header>
+                <n-flex align="center" gap="8">
+                  <n-icon size="15"><SettingsOutlined /></n-icon>
+                  <span class="section-title">General</span>
+                </n-flex>
+              </template>
+              <div class="section-options">
+                <div class="config-row">
+                  <span class="config-label-text">Meter name</span>
+                  <n-input v-model:value="cfg.meter_name" size="small" style="width:200px;" placeholder="meter" />
+                </div>
+                <div class="config-row">
+                  <span class="config-label-text">Capture interval (s)</span>
+                  <n-input-number v-model:value="cfg.interval" size="small" :min="5" :max="3600" style="width:120px;" />
+                </div>
+                <div class="config-row">
+                  <span class="config-label-text">Flash LED</span>
+                  <n-switch v-model:value="cfg.flash_en" />
+                </div>
+              </div>
+            </n-collapse-item>
+          </n-collapse>
+
           <template #footer>
             <n-flex justify="space-between">
-              <n-button @click="step = 2">← Back to Configure</n-button>
-              <n-space v-if="buildDone">
-                <n-button v-if="!buildSuccess" :loading="building" @click="doBuild">Retry Build</n-button>
-                <n-button v-if="buildSuccess" type="primary" @click="step = 4">Flash Device →</n-button>
-              </n-space>
+              <n-button @click="step = 1">← Back</n-button>
+              <n-button type="primary" @click="step = 3">Next: Download →</n-button>
             </n-flex>
           </template>
         </n-card>
       </div>
 
-      <!-- ───────────────────────────── Step 4: Flash ──────────────────────────────── -->
+      <!-- ── Step 3: Download ───────────────────────────────────────────── -->
+      <div v-if="step === 3" class="step-body">
+        <n-card size="small">
+          <template #header>Download Firmware</template>
+          <n-space vertical size="medium">
+            <div class="status-row">
+              <n-icon color="#7e8798"><DeveloperBoardOutlined /></n-icon>
+              <span>{{ boardLabels[selectedBoard] || selectedBoard }} — {{ selectedTag }}</span>
+            </div>
+            <div v-if="downloadDone" class="status-row">
+              <n-icon color="#18a058"><CheckCircleOutlined /></n-icon>
+              <span>Firmware cached on server.</span>
+            </div>
+            <div v-else-if="downloading" class="status-row">
+              <n-spin :size="16" />
+              <span>Downloading from GitHub…</span>
+            </div>
+            <n-alert v-if="downloadError" type="error" :title="downloadError" />
+            <n-button v-if="!downloadDone" type="primary" :loading="downloading" @click="doDownload">
+              Download Firmware
+            </n-button>
+          </n-space>
+          <template #footer>
+            <n-flex justify="space-between">
+              <n-button @click="step = 2">← Back</n-button>
+              <n-button type="primary" :disabled="!downloadDone" @click="step = 4">Next: Flash →</n-button>
+            </n-flex>
+          </template>
+        </n-card>
+      </div>
+
+      <!-- ── Step 4: Flash ──────────────────────────────────────────────── -->
       <div v-if="step === 4" class="step-body">
         <n-card size="small">
           <template #header>Flash via WebSerial</template>
@@ -218,7 +197,8 @@
             </n-alert>
             <template v-else>
               <n-alert v-if="resetMode === 'auto'" type="info" title="Auto reset">
-                The device will be reset into bootloader mode automatically via DTR/RTS. If connection fails, switch to <strong>Manual</strong> mode.
+                The device will be reset into bootloader mode automatically via DTR/RTS.
+                If connection fails, switch to <strong>Manual</strong> mode.
               </n-alert>
               <n-alert v-else type="warning" title="Manual bootloader mode">
                 <ol style="margin:4px 0;padding-left:18px;">
@@ -232,18 +212,13 @@
               <n-button type="primary" :disabled="!webSerialSupported" @click="doFlash">
                 Connect &amp; Flash
               </n-button>
-              <n-select
-                v-model:value="baudRate"
-                :options="BAUD_RATES"
-                size="small"
-                style="width:130px;"
-              />
+              <n-select v-model:value="baudRate" :options="BAUD_RATES" size="small" style="width:130px;" />
               <n-text depth="3" style="font-size:11px;">baud rate</n-text>
               <n-radio-group v-model:value="resetMode" size="small">
                 <n-radio-button value="auto">Auto reset</n-radio-button>
                 <n-radio-button value="manual">Manual</n-radio-button>
               </n-radio-group>
-              <n-button @click="step = 3">← Back to Build</n-button>
+              <n-button @click="step = 3">← Back</n-button>
             </n-flex>
             <div v-if="flashProgress !== null" class="flash-progress">
               <n-progress type="line" :percentage="flashProgress" :height="10" :border-radius="5" :processing="flashing" />
@@ -256,28 +231,14 @@
             <n-alert v-if="flashError" type="error" :title="flashError" />
             <n-button v-if="flashSuccess || flashError" @click="resetFlash">Flash again</n-button>
 
-            <n-divider style="margin: 4px 0;" />
+            <n-divider style="margin:4px 0;" />
 
-            <!-- Serial monitor -->
             <n-flex align="center" gap="8">
-              <n-button
-                v-if="!monitorActive"
-                :disabled="!webSerialSupported || flashing"
-                size="small"
-                @click="startMonitor"
-              >
+              <n-button v-if="!monitorActive" :disabled="!webSerialSupported || flashing" size="small" @click="startMonitor">
                 View Device Logs
               </n-button>
-              <n-button v-else size="small" type="error" @click="stopMonitor">
-                Stop Monitor
-              </n-button>
-              <n-select
-                v-model:value="monitorBaudRate"
-                :options="BAUD_RATES"
-                size="small"
-                style="width:130px;"
-                :disabled="monitorActive"
-              />
+              <n-button v-else size="small" type="error" @click="stopMonitor">Stop Monitor</n-button>
+              <n-select v-model:value="monitorBaudRate" :options="BAUD_RATES" size="small" style="width:130px;" :disabled="monitorActive" />
               <n-text depth="3" style="font-size:11px;">monitor baud</n-text>
             </n-flex>
             <div v-if="monitorActive || monitorOutput" class="build-terminal" ref="monitorEl">
@@ -291,126 +252,117 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, shallowRef } from 'vue';
+import { ref, computed, nextTick, onMounted } from 'vue';
 import {
   NCard, NButton, NSpace, NFlex, NSteps, NStep,
   NInput, NInputNumber, NSwitch, NEmpty, NAlert, NProgress,
-  NIcon, NTooltip, NText, NSpin, NTag, NCollapse, NCollapseItem,
-  NSelect, NDivider, NRadioGroup, NRadioButton,
+  NIcon, NTooltip, NText, NSpin, NSelect, NDivider,
+  NRadioGroup, NRadioButton, NCollapse, NCollapseItem,
 } from 'naive-ui';
 import {
   CheckCircleOutlined,
-  InfoOutlined,
   HelpOutlineOutlined,
   WifiOutlined,
   CloudOutlined,
-  AccessTimeOutlined,
-  PhotoCameraOutlined,
-  BuildOutlined,
   SettingsOutlined,
   DeveloperBoardOutlined,
 } from '@vicons/material';
 import { useAuthStore } from '@/stores/authStore';
 import { apiService } from '@/services/api.js';
 
-// ── Constants ──────────────────────────────────────────────────────────────────
+const NVS_OFFSET  = 0x9000;
+const SAVED_KEY   = 'mm_nvs_flash_config';
+const host        = import.meta.env.VITE_HOST || '';
+const authStore   = useAuthStore();
 
-const FIRMWARE_DIR = '/data/metermonitor-esp';
-const host = import.meta.env.VITE_HOST || '';
-
-const SECTION_DEFS = [
-  { key: 'Board',    label: 'Board',          pattern: /BOARD/i },
-  { key: 'General',  label: 'General',         pattern: /INTERVAL|_NAME$|UNIQUE|IDENTIFYING|DEVICE_NAME|METER_NAME/i },
-  { key: 'WiFi',     label: 'WiFi',            pattern: /WIFI|SSID/i },
-  { key: 'MQTT',     label: 'MQTT',            pattern: /MQTT|BROKER/i },
-  { key: 'Time',     label: 'Time / SNTP',     pattern: /SNTP|NTP|TIME/i },
-  { key: 'Camera',   label: 'Camera',          pattern: /CAMERA|FRAME|RESOL/i },
-  { key: 'Hardware', label: 'Hardware / GPIO', pattern: /GPIO|PIN|FLASH|LED_STRIP|DONE/i },
-  { key: 'Other',    label: 'Other',           pattern: /.*/ },  // catch-all
-];
-
-const SECTION_ORDER = SECTION_DEFS.map(d => d.key);
-
-const SECTION_ICONS = {
-  Board:    DeveloperBoardOutlined,
-  General:  SettingsOutlined,
-  WiFi:     WifiOutlined,
-  MQTT:     CloudOutlined,
-  Time:     AccessTimeOutlined,
-  Camera:   PhotoCameraOutlined,
-  Hardware: BuildOutlined,
-  Other:    SettingsOutlined,
-};
-
-const ADVANCED_ONLY = new Set([
-  'METER_MONITOR_WIFI_MAXIMUM_RETRY',
-  'METER_MONITOR_DONE',
-  'METER_MONITOR_DONE_GPIO',
-  'METER_MONITOR_FLASH_GPIO',
-  'METER_MONITOR_LED_STRIP',
-  'METER_MONITOR_SNTP_TIME_SERVER',
-  'METER_MONITOR_SNTP_TIME_SYNC_ALWAYS',
-]);
-
-// ── Auth ───────────────────────────────────────────────────────────────────────
-
-const authStore = useAuthStore();
-
-// ── Step state ─────────────────────────────────────────────────────────────────
-
+// ── step state ─────────────────────────────────────────────────────────────────
 const step = ref(1);
 
-// ── Step 1 ─────────────────────────────────────────────────────────────────────
+// ── step 1 ─────────────────────────────────────────────────────────────────────
+const releases       = ref([]);
+const boardLabels    = ref({});
+const loadingReleases = ref(false);
+const releasesError  = ref('');
+const selectedTag    = ref('');
+const selectedBoard  = ref('');
 
-const firmwareReady = ref(false);
-const preparing = ref(false);
-const prepareOutput = ref('');
-const prepareError = ref('');
+const selectedRelease = computed(() =>
+  releases.value.find(r => r.tag === selectedTag.value) ?? null
+);
 
-// ── Step 2 ─────────────────────────────────────────────────────────────────────
+async function loadReleases() {
+  loadingReleases.value = true;
+  releasesError.value   = '';
+  try {
+    const data = await apiService.getJson('api/flash/releases');
+    releases.value    = data.releases    ?? [];
+    boardLabels.value = data.board_labels ?? {};
+    if (releases.value.length) {
+      selectedTag.value   = releases.value[0].tag;
+      selectedBoard.value = releases.value[0].boards[0] ?? '';
+    }
+  } catch (e) {
+    releasesError.value = e.message;
+  } finally {
+    loadingReleases.value = false;
+  }
+}
 
-const SAVED_CONFIG_KEY = 'mm_flash_device_config';
+// ── step 2 ─────────────────────────────────────────────────────────────────────
+const DEFAULT_CFG = () => ({
+  wifi_ssid:  '',
+  wifi_pass:  '',
+  mqtt_url:   'mqtt://192.168.1.1:1883',
+  mqtt_user:  '',
+  mqtt_pass:  '',
+  mqtt_topic: 'MeterMonitor/meter',
+  meter_name: 'meter',
+  interval:   30,
+  flash_en:   true,
+});
 
-const advancedMode = ref(false);
-const loadingKconfig = ref(false);
-const kconfigOptions = ref([]);   // raw options from backend
-const configValues = ref({});     // form values (choice stored as selected name)
-const hasSavedConfig = ref(!!localStorage.getItem(SAVED_CONFIG_KEY));
-const saveNotice = ref('');
+const cfg         = ref(DEFAULT_CFG());
+const saveNotice  = ref('');
+const hasSavedConfig = ref(!!localStorage.getItem(SAVED_KEY));
 
 function saveConfig() {
-  localStorage.setItem(SAVED_CONFIG_KEY, JSON.stringify(configValues.value));
+  localStorage.setItem(SAVED_KEY, JSON.stringify(cfg.value));
   hasSavedConfig.value = true;
   saveNotice.value = 'Saved!';
   setTimeout(() => { saveNotice.value = ''; }, 1800);
 }
 
 function loadSavedConfig() {
-  const raw = localStorage.getItem(SAVED_CONFIG_KEY);
-  if (!raw) return;
   try {
-    const saved = JSON.parse(raw);
-    // Merge: only overwrite keys that exist in current form
-    const next = { ...configValues.value };
-    for (const [k, v] of Object.entries(saved)) {
-      if (k in next) next[k] = v;
-    }
-    configValues.value = next;
+    const saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '{}');
+    cfg.value = { ...DEFAULT_CFG(), ...saved };
     saveNotice.value = 'Loaded!';
     setTimeout(() => { saveNotice.value = ''; }, 1800);
-  } catch { /* ignore malformed storage */ }
+  } catch { /* ignore */ }
 }
 
-// ── Step 3 ─────────────────────────────────────────────────────────────────────
+// ── step 3 ─────────────────────────────────────────────────────────────────────
+const downloading  = ref(false);
+const downloadDone = ref(false);
+const downloadError = ref('');
 
-const building = ref(false);
-const buildOutput = ref('');
-const buildDone = ref(false);
-const buildSuccess = ref(false);
-const buildTerminalEl = ref(null);
+async function doDownload() {
+  downloading.value  = true;
+  downloadError.value = '';
+  try {
+    await apiService.postJson('api/flash/download', {
+      tag:   selectedTag.value,
+      board: selectedBoard.value,
+    });
+    downloadDone.value = true;
+  } catch (e) {
+    downloadError.value = e.message;
+  } finally {
+    downloading.value = false;
+  }
+}
 
-// ── Step 4 ─────────────────────────────────────────────────────────────────────
-
+// ── step 4: flash ──────────────────────────────────────────────────────────────
 const BAUD_RATES = [
   { label: '921600', value: 921600 },
   { label: '460800', value: 460800 },
@@ -418,249 +370,129 @@ const BAUD_RATES = [
   { label: '115200', value: 115200 },
 ];
 
-const webSerialSupported = ref('serial' in navigator);
-const baudRate = ref(460800);
-const resetMode = ref('auto');
-const flashing = ref(false);
-const flashSuccess = ref(false);
-const flashError = ref('');
-const flashLog = ref([]);
-const flashProgress = ref(null);
-const flashProgressLabel = ref('');
+const webSerialSupported  = ref('serial' in navigator);
+const baudRate            = ref(460800);
+const resetMode           = ref('auto');
+const flashing            = ref(false);
+const flashSuccess        = ref(false);
+const flashError          = ref('');
+const flashLog            = ref([]);
+const flashProgress       = ref(null);
+const flashProgressLabel  = ref('');
 
-// ── Serial monitor state ───────────────────────────────────────────────────────
-const monitorActive = ref(false);
-const monitorOutput = ref('');
+const monitorActive   = ref(false);
+const monitorOutput   = ref('');
 const monitorBaudRate = ref(115200);
-const monitorEl = ref(null);
+const monitorEl       = ref(null);
 let _monitorReader = null;
-let _monitorPort = null;
+let _monitorPort   = null;
 
-// ── Section logic ──────────────────────────────────────────────────────────────
+function flashLog_push(line) { flashLog.value.push(line); }
 
-function getSection(optName) {
-  for (const def of SECTION_DEFS) {
-    if (def.pattern.test(optName)) return def.key;
-  }
-  return 'Other';
-}
+async function doFlash() {
+  flashing.value    = true;
+  flashError.value  = '';
+  flashLog.value    = [];
+  flashProgress.value = 0;
+  flashSuccess.value  = false;
 
-// ── Depends-on evaluation ──────────────────────────────────────────────────────
-// Choices are stored as configValues[CHOICE_NAME] = "SELECTED_OPT_NAME"
-// For depends_on we need to resolve individual option names (CHOICE_OPT_A → bool)
-// resolvedFlat expands choices so evaluateDepends works correctly.
-
-const resolvedFlat = computed(() => {
-  const flat = { ...configValues.value };
-  for (const opt of kconfigOptions.value) {
-    if (opt.type === 'choice') {
-      const selected = configValues.value[opt.name];
-      for (const c of opt.choices) {
-        flat[c.name] = (c.name === selected);
-      }
-    }
-  }
-  return flat;
-});
-
-function tokenizeDepends(expr) {
-  const tokens = [];
-  let i = 0;
-  while (i < expr.length) {
-    const c = expr[i];
-    if (' \t'.includes(c)) { i++; continue; }
-    if (c === '(') { tokens.push({ t: 'LP' }); i++; }
-    else if (c === ')') { tokens.push({ t: 'RP' }); i++; }
-    else if (c === '!') { tokens.push({ t: 'NOT' }); i++; }
-    else if (expr.startsWith('&&', i)) { tokens.push({ t: 'AND' }); i += 2; }
-    else if (expr.startsWith('||', i)) { tokens.push({ t: 'OR' }); i += 2; }
-    else if (/[A-Za-z_]/.test(c)) {
-      let j = i;
-      while (j < expr.length && /[A-Za-z0-9_]/.test(expr[j])) j++;
-      tokens.push({ t: 'ID', v: expr.slice(i, j) });
-      i = j;
-    } else { i++; }
-  }
-  return tokens;
-}
-
-function evaluateDepends(expr, flat) {
-  if (!expr) return true;
-  const tokens = tokenizeDepends(expr);
-  let pos = 0;
-  const peek = () => tokens[pos];
-  const consume = () => tokens[pos++];
-  const resolve = (name) => {
-    if (!(name in flat)) return true; // unknown → show
-    const v = flat[name];
-    if (v === true || v === 'y') return true;
-    if (v === false || v === 'n' || v === null || v === undefined) return false;
-    return typeof v === 'string' ? v !== '' : !!v;
-  };
-  function prim() {
-    const tok = peek();
-    if (!tok) return true;
-    if (tok.t === 'NOT') { consume(); return !prim(); }
-    if (tok.t === 'LP') { consume(); const r = parseOr(); if (peek()?.t === 'RP') consume(); return r; }
-    if (tok.t === 'ID') { consume(); return resolve(tok.v); }
-    return true;
-  }
-  function parseAnd() { let v = prim(); while (peek()?.t === 'AND') { consume(); v = prim() && v; } return v; }
-  function parseOr()  { let v = parseAnd(); while (peek()?.t === 'OR')  { consume(); v = parseAnd() || v; } return v; }
-  return parseOr();
-}
-
-// ── Visible options grouped by section ─────────────────────────────────────────
-
-const optionsBySection = computed(() => {
-  const flat = resolvedFlat.value;
-  const advanced = advancedMode.value;
-  const buckets = {};
-  for (const opt of kconfigOptions.value) {
-    if (!evaluateDepends(opt.depends_on, flat)) continue;
-    if (!advanced && ADVANCED_ONLY.has(opt.name)) continue;
-    const key = getSection(opt.name);
-    if (!buckets[key]) buckets[key] = [];
-    buckets[key].push(opt);
-  }
-  return SECTION_ORDER
-    .filter(k => buckets[k]?.length > 0)
-    .map(k => ({ key: k, label: SECTION_DEFS.find(d => d.key === k).label, options: buckets[k] }));
-});
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function isPassword(opt) {
-  return opt.type === 'string' && /PASS(WORD|WD)?|SECRET/i.test(opt.name);
-}
-
-function toNumber(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
-
-function defaultForOpt(opt) {
-  if (opt.type === 'choice') {
-    return opt.default ?? (opt.choices[0]?.name ?? null);
-  }
-  if (opt.default !== null && opt.default !== undefined) {
-    if (opt.type === 'int' || opt.type === 'hex') return toNumber(opt.default);
-    return opt.default;
-  }
-  if (opt.type === 'bool') return false;
-  if (opt.type === 'int' || opt.type === 'hex') return 0;
-  return '';
-}
-
-function initConfigValues(options, savedValues) {
-  const vals = {};
-  for (const opt of options) {
-    if (opt.type === 'choice') {
-      const active = opt.choices.find(c => savedValues[c.name] === true);
-      vals[opt.name] = active ? active.name : defaultForOpt(opt);
-    } else if (opt.name in savedValues) {
-      const raw = savedValues[opt.name];
-      if (opt.type === 'int' || opt.type === 'hex') {
-        vals[opt.name] = toNumber(raw);
-      } else {
-        vals[opt.name] = raw;
-      }
-    } else {
-      vals[opt.name] = defaultForOpt(opt);
-    }
-  }
-  return vals;
-}
-
-// ── Payload for backend (expand choices → individual booleans) ─────────────────
-
-function buildPayload() {
-  const payload = {};
-  for (const opt of kconfigOptions.value) {
-    if (opt.type === 'choice') {
-      const selected = configValues.value[opt.name];
-      for (const c of opt.choices) {
-        payload[c.name] = (c.name === selected);
-      }
-    } else {
-      payload[opt.name] = configValues.value[opt.name];
-    }
-  }
-  return payload;
-}
-
-// ── Step 1: Prepare ────────────────────────────────────────────────────────────
-
-async function doPrepare() {
-  preparing.value = true;
-  prepareOutput.value = '';
-  prepareError.value = '';
-  try {
-    const result = await apiService.postJson('api/flash/prepare', {});
-    prepareOutput.value = result.output || '';
-    if (result.success) {
-      firmwareReady.value = true;
-      await loadKconfig();
-    } else {
-      prepareError.value = `${result.action} failed – see output above.`;
-    }
-  } catch (e) {
-    prepareError.value = e.message;
-  } finally {
-    preparing.value = false;
-  }
-}
-
-// ── Step 2: Load Kconfig ───────────────────────────────────────────────────────
-
-async function loadKconfig() {
-  loadingKconfig.value = true;
-  try {
-    const data = await apiService.getJson('api/flash/kconfig');
-    kconfigOptions.value = data.options || [];
-    configValues.value = initConfigValues(kconfigOptions.value, data.current_values || {});
-  } catch {
-    // firmware not ready yet
-  } finally {
-    loadingKconfig.value = false;
-  }
-}
-
-// ── Step 3: Build ──────────────────────────────────────────────────────────────
-
-async function doBuild() {
-  step.value = 3;
-  building.value = true;
-  buildOutput.value = '';
-  buildDone.value = false;
-  buildSuccess.value = false;
+  let transport = null;
 
   try {
-    const response = await fetch(`${host}api/flash/build`, {
-      method: 'POST',
+    // 1. Get firmware flash args
+    flashLog_push('Fetching flash configuration…');
+    const flashArgs = await apiService.getJson(
+      `api/flash/flash-args?tag=${encodeURIComponent(selectedTag.value)}&board=${encodeURIComponent(selectedBoard.value)}`
+    );
+    if (!flashArgs.binaries?.length) throw new Error('No binaries found — try re-downloading.');
+
+    // 2. Generate NVS binary from config
+    flashLog_push('Generating NVS partition…');
+    const nvsResp = await fetch(`${host}api/flash/nvs`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json', secret: authStore.secret },
-      body: JSON.stringify({ config: buildPayload() }),
+      body:    JSON.stringify(cfg.value),
     });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buildOutput.value += decoder.decode(value, { stream: true });
-      await nextTick();
-      if (buildTerminalEl.value) buildTerminalEl.value.scrollTop = buildTerminalEl.value.scrollHeight;
+    if (!nvsResp.ok) throw new Error(`NVS generation failed: ${nvsResp.status}`);
+    const nvsBuf = await nvsResp.arrayBuffer();
+
+    // 3. Download firmware binaries
+    flashLog_push(`Downloading ${flashArgs.binaries.length} firmware file(s)…`);
+    const fileArray = [];
+    for (const bin of flashArgs.binaries) {
+      flashLog_push(`  ↓ ${bin.filename} @ 0x${bin.offset.toString(16)} (${(bin.size / 1024).toFixed(1)} KB)`);
+      const resp = await fetch(`${host}api/flash/binaries/${bin.path}`, {
+        headers: { secret: authStore.secret },
+      });
+      if (!resp.ok) throw new Error(`Failed to download ${bin.filename}: ${resp.status}`);
+      fileArray.push({ data: new Uint8Array(await resp.arrayBuffer()), address: bin.offset });
     }
+
+    // 4. Add NVS partition
+    flashLog_push(`  + nvs.bin @ 0x${NVS_OFFSET.toString(16)} (${(nvsBuf.byteLength / 1024).toFixed(1)} KB)`);
+    fileArray.push({ data: new Uint8Array(nvsBuf), address: NVS_OFFSET });
+
+    // 5. WebSerial flash
+    flashLog_push('Initializing WebSerial…');
+    const { ESPLoader, Transport } = await import('esptool-js');
+    const port = await navigator.serial.requestPort();
+    transport  = new Transport(port, false);
+    const terminal = {
+      clean:     () => {},
+      writeLine: (d) => flashLog_push(d),
+      write:     (d) => {
+        if (flashLog.value.length) flashLog.value[flashLog.value.length - 1] += d;
+        else flashLog_push(d);
+      },
+    };
+
+    const isManual = resetMode.value === 'manual';
+    flashLog_push(isManual ? 'Connecting (manual mode)…' : 'Connecting to device…');
+    const loader = new ESPLoader({ transport, baudrate: baudRate.value, terminal, debugLogging: false });
+    const chip   = await loader.main(isManual ? 'no_reset' : 'default_reset');
+    flashLog_push(`Connected: ${chip}`);
+
+    const total = fileArray.length;
+    flashLog_push('Writing flash…');
+    await loader.writeFlash({
+      fileArray,
+      flashMode: flashArgs.flash_mode ?? 'keep',
+      flashFreq: flashArgs.flash_freq ?? 'keep',
+      flashSize: flashArgs.flash_size ?? 'keep',
+      eraseAll:  false,
+      compress:  true,
+      reportProgress: (fileIndex, written, size) => {
+        const pct = size > 0 ? written / size : 1;
+        flashProgress.value      = Math.round(((fileIndex + pct) / total) * 100);
+        flashProgressLabel.value = `File ${fileIndex + 1}/${total}: ${Math.round(pct * 100)}%`;
+      },
+      calculateMD5Hash: () => '',
+    });
+
+    flashLog_push('Resetting device…');
+    await loader.after('hard_reset');
+    flashProgress.value      = 100;
+    flashProgressLabel.value = 'Done!';
+    flashSuccess.value = true;
   } catch (e) {
-    buildOutput.value += `\nError: ${e.message}\n`;
+    if (e.name !== 'NotFoundError') {
+      flashError.value = e.message || String(e);
+      flashLog_push(`Error: ${flashError.value}`);
+    }
   } finally {
-    building.value = false;
-    buildDone.value = true;
-    buildSuccess.value = buildOutput.value.includes('__BUILD_SUCCESS__');
-    buildOutput.value = buildOutput.value
-      .replace('__BUILD_SUCCESS__\n', '')
-      .replace(/__BUILD_FAILED__\d+__\n?/, '');
+    if (transport) { try { await transport.disconnect(); } catch { /* ignore */ } }
+    flashing.value = false;
   }
 }
 
-// ── Serial monitor ─────────────────────────────────────────────────────────────
+function resetFlash() {
+  flashSuccess.value  = false;
+  flashError.value    = '';
+  flashLog.value      = [];
+  flashProgress.value = null;
+}
 
+// ── serial monitor ─────────────────────────────────────────────────────────────
 async function startMonitor() {
   monitorActive.value = true;
   monitorOutput.value = '';
@@ -668,7 +500,7 @@ async function startMonitor() {
     const port = await navigator.serial.requestPort();
     _monitorPort = port;
     await port.open({ baudRate: monitorBaudRate.value });
-    const reader = port.readable.getReader();
+    const reader  = port.readable.getReader();
     _monitorReader = reader;
     const decoder = new TextDecoder();
     try {
@@ -696,105 +528,13 @@ async function startMonitor() {
 async function stopMonitor() {
   monitorActive.value = false;
   if (_monitorReader) { try { await _monitorReader.cancel(); } catch { /* ignore */ } _monitorReader = null; }
-  if (_monitorPort) { try { await _monitorPort.close(); } catch { /* ignore */ } _monitorPort = null; }
+  if (_monitorPort)   { try { await _monitorPort.close();    } catch { /* ignore */ } _monitorPort   = null; }
 }
 
-// ── Step 4: Flash ──────────────────────────────────────────────────────────────
-
-function flashLog_push(line) { flashLog.value.push(line); }
-
-async function doFlash() {
-  flashing.value = true;
-  flashError.value = '';
-  flashLog.value = [];
-  flashProgress.value = 0;
-  flashSuccess.value = false;
-
-  let transport = null;
-
-  try {
-    flashLog_push('Fetching flash configuration...');
-    const flashArgs = await apiService.getJson('api/flash/flash-args');
-    if (!flashArgs.binaries?.length) throw new Error('No binaries found. Was the build successful?');
-
-    flashLog_push(`Downloading ${flashArgs.binaries.length} binary file(s)...`);
-    const fileArray = [];
-    for (const bin of flashArgs.binaries) {
-      flashLog_push(`  ↓ ${bin.filename} @ 0x${bin.offset.toString(16)} (${(bin.size / 1024).toFixed(1)} KB)`);
-      const resp = await fetch(`${host}api/flash/binaries/${bin.path}`, { headers: { secret: authStore.secret } });
-      if (!resp.ok) throw new Error(`Failed to download ${bin.filename}: ${resp.status}`);
-      const buf = await resp.arrayBuffer();
-      fileArray.push({ data: new Uint8Array(buf), address: bin.offset });
-    }
-
-    flashLog_push('Initializing WebSerial...');
-    const { ESPLoader, Transport } = await import('esptool-js');
-    const port = await navigator.serial.requestPort();
-    transport = new Transport(port, false);
-    const terminal = {
-      clean: () => {},
-      writeLine: (d) => flashLog_push(d),
-      write: (d) => {
-        if (flashLog.value.length) flashLog.value[flashLog.value.length - 1] += d;
-        else flashLog_push(d);
-      },
-    };
-
-    const isManual = resetMode.value === 'manual';
-    flashLog_push(isManual ? 'Connecting (manual bootloader mode)...' : 'Connecting to device...');
-    const loader = new ESPLoader({ transport, baudrate: baudRate.value, terminal, debugLogging: false });
-    const chip = await loader.main(isManual ? 'no_reset' : 'default_reset');
-    flashLog_push(`Connected: ${chip}`);
-
-    const total = fileArray.length;
-    flashLog_push('Writing flash...');
-    await loader.writeFlash({
-      fileArray,
-      flashMode: flashArgs.flash_mode ?? 'keep',
-      flashFreq: flashArgs.flash_freq ?? 'keep',
-      flashSize: flashArgs.flash_size ?? 'keep',
-      eraseAll: false,
-      compress: true,
-      reportProgress: (fileIndex, written, size) => {
-        const pct = size > 0 ? written / size : 1;
-        flashProgress.value = Math.round(((fileIndex + pct) / total) * 100);
-        flashProgressLabel.value = `File ${fileIndex + 1}/${total}: ${Math.round(pct * 100)}%`;
-      },
-      calculateMD5Hash: () => '',
-    });
-
-    flashLog_push('Resetting device...');
-    await loader.after('hard_reset');
-    flashProgress.value = 100;
-    flashProgressLabel.value = 'Done!';
-    flashSuccess.value = true;
-  } catch (e) {
-    if (e.name !== 'NotFoundError') {
-      flashError.value = e.message || String(e);
-      flashLog_push(`Error: ${flashError.value}`);
-    }
-  } finally {
-    if (transport) {
-      try { await transport.disconnect(); } catch { /* ignore disconnect errors */ }
-    }
-    flashing.value = false;
-  }
-}
-
-function resetFlash() {
-  flashSuccess.value = false;
-  flashError.value = '';
-  flashLog.value = [];
-  flashProgress.value = null;
-}
-
-// ── Mount: try to load existing config ─────────────────────────────────────────
-
-onMounted(async () => {
-  try {
-    await loadKconfig();
-    if (kconfigOptions.value.length > 0) firmwareReady.value = true;
-  } catch { /* repo not ready */ }
+// ── init ───────────────────────────────────────────────────────────────────────
+onMounted(() => {
+  loadReleases();
+  if (localStorage.getItem(SAVED_KEY)) loadSavedConfig();
 });
 </script>
 
@@ -802,19 +542,6 @@ onMounted(async () => {
 .flash-device { width: 100%; }
 .flash-steps  { margin-bottom: 20px; }
 .step-body    { margin-top: 4px; width: 800px; }
-
-/* ── log / terminal ── */
-.log-block {
-  background: rgba(0,0,0,.35);
-  border-radius: 8px;
-  padding: 10px 14px;
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.log-block pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 
 .build-terminal {
   background: #111827;
@@ -828,15 +555,12 @@ onMounted(async () => {
 }
 .build-terminal pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: #e5e7eb; }
 
-/* ── config form ── */
 .config-collapse { margin: -4px 0; }
-
-.section-title { font-size: 13px; font-weight: 600; }
+.section-title   { font-size: 13px; font-weight: 600; }
 
 .section-options {
   display: flex;
   flex-direction: column;
-  gap: 0;
   padding: 4px 0 8px 0;
 }
 
@@ -851,35 +575,14 @@ onMounted(async () => {
 }
 .config-row:last-child { border-bottom: none; }
 
-.config-label-col {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-.config-label-text  { font-size: 13px; font-weight: 500; }
-.config-name-badge  {
-  font-size: 10px;
-  font-family: monospace;
-  opacity: .4;
-  background: rgba(255,255,255,.06);
-  border-radius: 4px;
-  padding: 1px 5px;
-  white-space: nowrap;
-}
-.help-icon { opacity: .45; cursor: help; flex-shrink: 0; }
+.config-label-text { font-size: 13px; font-weight: 500; }
+.help-icon         { opacity: .45; cursor: help; }
 
-.config-input-col { display: flex; align-items: center; flex-shrink: 0; }
-
-/* ── status row ── */
 .status-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.status-row code { font-family: monospace; font-size: 12px; opacity: .7; }
 
-/* ── flash ── */
-.flash-progress { display: flex; flex-direction: column; gap: 4px; }
+.flash-progress       { display: flex; flex-direction: column; gap: 4px; }
 .flash-progress-label { font-size: 12px; opacity: .6; }
+
 .flash-log {
   background: rgba(0,0,0,.3);
   border-radius: 8px;
@@ -892,10 +595,7 @@ onMounted(async () => {
 }
 .flash-log-line { white-space: pre-wrap; word-break: break-all; }
 
-/* ── light mode overrides ── */
-.light-mode .log-block,
 .light-mode .flash-log      { background: rgba(0,0,0,.06); color: #111; }
 .light-mode .build-terminal { background: #1f2937; }
-.light-mode .config-name-badge { background: rgba(0,0,0,.06); }
-.light-mode .config-row { border-bottom-color: rgba(0,0,0,.07); }
+.light-mode .config-row     { border-bottom-color: rgba(0,0,0,.07); }
 </style>

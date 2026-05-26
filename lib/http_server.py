@@ -10,7 +10,7 @@ import tempfile
 import numpy as np
 from PIL import Image
 import cv2
-from fastapi import FastAPI, HTTPException, Body, Header, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, Body, Header, Depends, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, conint
 import base64
@@ -27,18 +27,19 @@ import uuid
 from datetime import datetime
 
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse, FileResponse, StreamingResponse
+from starlette.responses import JSONResponse, FileResponse, StreamingResponse, Response
 
 from lib.functions import reevaluate_latest_picture, add_history_entry, reevaluate_digits, publish_registration, compute_daily_avg
 from lib.ha_flash_suggestion import suggest_flash_entity
 from lib.flash_handler import (
-    clone_or_pull_firmware,
-    firmware_exists,
-    get_kconfig_options,
-    read_current_sdkconfig,
-    build_firmware_stream,
+    get_releases,
+    download_release,
+    generate_nvs_binary,
     get_flash_args,
-    FIRMWARE_DIR,
+    is_downloaded,
+    FIRMWARE_CACHE_DIR,
+    NVS_PARTITION_OFFSET,
+    BOARD_LABELS,
 )
 from lib.model_singleton import get_meter_predictor
 from lib.global_alerts import get_alerts, add_alert, remove_alert, set_change_callback
@@ -1906,54 +1907,50 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
 
     # --- Flash device endpoints ---
 
-    class FlashBuildRequest(BaseModel):
-        config: dict
+    class FlashDownloadRequest(BaseModel):
+        tag: str
+        board: str
 
-    @app.post("/api/flash/prepare", dependencies=[Depends(authenticate)])
-    async def flash_prepare():
+    @app.get("/api/flash/releases", dependencies=[Depends(authenticate)])
+    async def flash_releases():
         try:
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, clone_or_pull_firmware)
-            return result
+            releases = await loop.run_in_executor(None, get_releases)
+            return {"releases": releases, "board_labels": BOARD_LABELS}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=502, detail=str(e))
 
-    @app.get("/api/flash/kconfig", dependencies=[Depends(authenticate)])
-    def flash_kconfig():
-        if not firmware_exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Firmware not cloned yet. Call /api/flash/prepare first.",
-            )
+    @app.post("/api/flash/download", dependencies=[Depends(authenticate)])
+    async def flash_download(req: FlashDownloadRequest):
         try:
-            options = get_kconfig_options()
-            current_values = read_current_sdkconfig()
-            return {"options": options, "current_values": current_values}
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, download_release, req.tag, req.board)
+            return {"ok": True, "cached": True}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.post("/api/flash/build", dependencies=[Depends(authenticate)])
-    async def flash_build(req: FlashBuildRequest):
-        if not firmware_exists():
-            raise HTTPException(status_code=404, detail="Firmware not cloned yet.")
-
-        async def _stream():
-            async for chunk in build_firmware_stream(req.config):
-                yield chunk
-
-        return StreamingResponse(
-            _stream(),
-            media_type="text/plain",
-            headers={
-                "X-Accel-Buffering": "no",   # disable Nginx/HA-ingress proxy buffering
-                "Cache-Control": "no-cache",
-            },
-        )
+    @app.post("/api/flash/nvs", dependencies=[Depends(authenticate)])
+    async def flash_nvs(request: Request):
+        try:
+            config = await request.json()
+            loop   = asyncio.get_event_loop()
+            binary = await loop.run_in_executor(None, generate_nvs_binary, config)
+            return Response(
+                content=binary,
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": 'attachment; filename="nvs.bin"'},
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/flash/flash-args", dependencies=[Depends(authenticate)])
-    def flash_get_flash_args():
+    def flash_get_flash_args(tag: str, board: str):
         try:
-            return get_flash_args()
+            args = get_flash_args(tag, board)
+            args["nvs_offset"] = NVS_PARTITION_OFFSET
+            return args
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
@@ -1961,9 +1958,9 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
 
     @app.get("/api/flash/binaries/{filepath:path}", dependencies=[Depends(authenticate)])
     def flash_binary(filepath: str):
-        build_dir = os.path.normpath(os.path.join(FIRMWARE_DIR, "build"))
-        target = os.path.normpath(os.path.join(build_dir, filepath))
-        if not target.startswith(build_dir + os.sep) and target != build_dir:
+        cache_root = os.path.normpath(FIRMWARE_CACHE_DIR)
+        target     = os.path.normpath(os.path.join(FIRMWARE_CACHE_DIR, filepath))
+        if not target.startswith(cache_root + os.sep):
             raise HTTPException(status_code=403, detail="Access denied")
         if not os.path.isfile(target):
             raise HTTPException(status_code=404, detail="Binary not found")

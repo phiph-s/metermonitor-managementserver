@@ -14,78 +14,15 @@ COPY config.json ./config.json
 RUN yarn build
 
 ####################################
-# ESP-IDF Base Stage
-#
-# Only rebuilds when IDF_VERSION changes. For cross-machine cache sharing:
-#   docker build --target idf-base -t registry/mm-idf-base:v5.4.1 .
-#   docker push registry/mm-idf-base:v5.4.1
-#   docker build --cache-from registry/mm-idf-base:v5.4.1 .
-####################################
-FROM python:3.12-slim-bookworm AS idf-base
-
-ARG IDF_VERSION=v5.4.1
-ENV IDF_PATH=/opt/esp-idf
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    git cmake ninja-build flex bison gperf ccache \
-    dfu-util libusb-1.0-0 python3-venv
-
-# --shallow-submodules makes submodule clones shallow too (--depth alone doesn't).
-# Everything is cleaned up in the same RUN so deleted bytes never land in a layer.
-RUN git clone --depth=1 --shallow-submodules --branch ${IDF_VERSION} \
-        --recurse-submodules \
-        https://github.com/espressif/esp-idf.git ${IDF_PATH} \
-    && cd ${IDF_PATH} \
-    && ./install.sh esp32 \
-    # Replace the shallow-clone history with a minimal tagged empty commit so
-    # cmake git queries (GetGitRevisionDescription / grabRef) resolve cleanly.
-    && rm -rf ${IDF_PATH}/.git \
-    && git -C ${IDF_PATH} init -q \
-    && git -C ${IDF_PATH} -c user.email="b@b" -c user.name="b" \
-           commit --allow-empty -q -m "esp-idf" \
-    && git -C ${IDF_PATH} tag ${IDF_VERSION} \
-    # Stub out gdbinit.cmake: it iterates git submodules with an unquoted cmake
-    # variable (file(TO_CMAKE_PATH ${dir} ...)) which expands to zero args when
-    # submodule foreach returns empty in a non-submodule git init → CMake error.
-    # The gdbinit is only used for interactive GDB sessions, not for building.
-    && printf 'function(__generate_gdbinit)\nendfunction()\n' \
-           > ${IDF_PATH}/tools/cmake/gdbinit.cmake \
-    \
-    # ── strip tools not needed for compilation ─────────────────────────────
-    # Debuggers and JTAG interface
-    && rm -rf /root/.espressif/tools/openocd-esp32 \
-    && rm -rf /root/.espressif/tools/xtensa-esp-elf-gdb \
-    && rm -rf /root/.espressif/tools/riscv32-esp-elf-gdb \
-    # RISC-V compiler (ESP32 classic uses Xtensa only)
-    && rm -rf /root/.espressif/tools/riscv32-esp-elf \
-    # Downloaded archives – already extracted, not needed at runtime
-    && rm -rf /root/.espressif/dist \
-    \
-    # ── strip IDF source content not needed at runtime ─────────────────────
-    && rm -rf ${IDF_PATH}/examples \
-    && rm -rf ${IDF_PATH}/docs \
-    && find ${IDF_PATH}/components -type d \( -name "test" -o -name "test_apps" \) \
-         -exec rm -rf {} + 2>/dev/null || true
-
-####################################
 # Final Runtime Stage
 ####################################
-FROM idf-base
+FROM python:3.12-slim-bookworm
 
 WORKDIR /docker-app
 
-# build-essential only needed to compile Python C extensions; purged afterwards
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends build-essential
-
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt \
-    && apt-get purge -y --auto-remove build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 COPY --from=frontend-builder /frontend/dist /docker-app/frontend/dist

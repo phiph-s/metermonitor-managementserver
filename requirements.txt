@@ -12,3 +12,4 @@ numpy==1.26.4
 requests
 websockets
 httpx
+esp-idf-nvs-partition-gen
