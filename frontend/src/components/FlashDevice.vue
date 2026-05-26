@@ -399,14 +399,19 @@ async function doFlash() {
   let transport = null;
 
   try {
-    // 1. Get firmware flash args
+    // 1. Request serial port immediately — must be the first await to stay
+    //    within the browser's user-gesture token window.
+    flashLog_push('Initializing WebSerial…');
+    const port = await navigator.serial.requestPort();
+
+    // 2. Get firmware flash args
     flashLog_push('Fetching flash configuration…');
     const flashArgs = await apiService.getJson(
       `api/flash/flash-args?tag=${encodeURIComponent(selectedTag.value)}&board=${encodeURIComponent(selectedBoard.value)}`
     );
     if (!flashArgs.binaries?.length) throw new Error('No binaries found — try re-downloading.');
 
-    // 2. Generate NVS binary from config
+    // 3. Generate NVS binary from config
     flashLog_push('Generating NVS partition…');
     const nvsResp = await fetch(`${host}api/flash/nvs`, {
       method:  'POST',
@@ -416,7 +421,7 @@ async function doFlash() {
     if (!nvsResp.ok) throw new Error(`NVS generation failed: ${nvsResp.status}`);
     const nvsBuf = await nvsResp.arrayBuffer();
 
-    // 3. Download firmware binaries
+    // 4. Download firmware binaries
     flashLog_push(`Downloading ${flashArgs.binaries.length} firmware file(s)…`);
     const fileArray = [];
     for (const bin of flashArgs.binaries) {
@@ -428,14 +433,12 @@ async function doFlash() {
       fileArray.push({ data: new Uint8Array(await resp.arrayBuffer()), address: bin.offset });
     }
 
-    // 4. Add NVS partition
+    // 5. Add NVS partition
     flashLog_push(`  + nvs.bin @ 0x${NVS_OFFSET.toString(16)} (${(nvsBuf.byteLength / 1024).toFixed(1)} KB)`);
     fileArray.push({ data: new Uint8Array(nvsBuf), address: NVS_OFFSET });
 
-    // 5. WebSerial flash
-    flashLog_push('Initializing WebSerial…');
+    // 6. Connect and flash
     const { ESPLoader, Transport } = await import('esptool-js');
-    const port = await navigator.serial.requestPort();
     transport  = new Transport(port, false);
     const terminal = {
       clean:     () => {},
