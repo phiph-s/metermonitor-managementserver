@@ -93,6 +93,7 @@ def is_downloaded(tag: str, board: str) -> bool:
 # ── NVS binary generation ──────────────────────────────────────────────────────
 
 def generate_nvs_binary(config: dict) -> bytes:
+    import argparse
     from esp_idf_nvs_partition_gen import nvs_partition_gen
 
     rows = [
@@ -121,11 +122,14 @@ def generate_nvs_binary(config: dict) -> bytes:
         bin_path = os.path.join(d, "nvs.bin")
         with open(csv_path, "w") as f:
             f.write(csv_text)
-        nvs_partition_gen.generate(
-            nvs_partition_gen.parse_args([
-                "generate", csv_path, bin_path, hex(NVS_PARTITION_SIZE),
-            ])
+        args = argparse.Namespace(
+            input=[csv_path],
+            output=bin_path,
+            outdir=d,
+            size=hex(NVS_PARTITION_SIZE),
+            version=2,
         )
+        nvs_partition_gen.generate(args)
         with open(bin_path, "rb") as f:
             return f.read()
 
