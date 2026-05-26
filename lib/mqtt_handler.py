@@ -154,9 +154,13 @@ class MQTTHandler:
                     ts /= 1000.0
                 return datetime.datetime.fromtimestamp(ts).isoformat()
 
-            # ISO timestamp
+            # ISO timestamp — no timezone → treat as local time;
+            # Z or offset → convert to local time
             try:
-                return datetime.datetime.fromisoformat(value).isoformat()
+                dt = datetime.datetime.fromisoformat(value)
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone().replace(tzinfo=None)
+                return dt.isoformat()
             except Exception:
                 return datetime.datetime.now().isoformat()
 
