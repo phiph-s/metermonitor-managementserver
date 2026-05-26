@@ -143,6 +143,16 @@
                   <span class="config-label-text">Flash LED</span>
                   <n-switch v-model:value="cfg.flash_en" />
                 </div>
+                <div class="config-row">
+                  <n-flex align="center" gap="6">
+                    <span class="config-label-text">Exposure delay (ms)</span>
+                    <n-tooltip trigger="hover">
+                      <template #trigger><n-icon size="13" class="help-icon"><HelpOutlineOutlined /></n-icon></template>
+                      Time the LED stays on before the photo is taken. 0 = no delay.
+                    </n-tooltip>
+                  </n-flex>
+                  <n-input-number v-model:value="cfg.flash_delay_ms" size="small" :min="0" :max="5000" :step="50" style="width:120px;" :disabled="!cfg.flash_en" />
+                </div>
               </div>
             </n-collapse-item>
           </n-collapse>
@@ -310,15 +320,16 @@ async function loadReleases() {
 
 // ── step 2 ─────────────────────────────────────────────────────────────────────
 const DEFAULT_CFG = () => ({
-  wifi_ssid:  '',
-  wifi_pass:  '',
-  mqtt_url:   'mqtt://192.168.1.1:1883',
-  mqtt_user:  '',
-  mqtt_pass:  '',
-  mqtt_topic: 'MeterMonitor/meter',
-  meter_name: 'meter',
-  interval:   30,
-  flash_en:   true,
+  wifi_ssid:      '',
+  wifi_pass:      '',
+  mqtt_url:       'mqtt://192.168.1.1:1883',
+  mqtt_user:      '',
+  mqtt_pass:      '',
+  mqtt_topic:     'MeterMonitor/meter',
+  meter_name:     'meter',
+  interval:       30,
+  flash_en:       true,
+  flash_delay_ms: 100,
 });
 
 const cfg         = ref(DEFAULT_CFG());

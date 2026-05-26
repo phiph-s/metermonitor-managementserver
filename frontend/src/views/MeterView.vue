@@ -130,6 +130,7 @@ onMounted(() => {
   evaluationEventHandler = (event) => {
     const meterName = event?.detail?.name;
     if (meterName && meterName === id.value) {
+      store.capturing = false;
       refreshMeter();
     }
   };
@@ -232,30 +233,32 @@ const resetToSetup = async () => {
 const message = useMessage();
 
 const triggerCapture = async () => {
+  const isMqtt = store.source?.source_type === 'mqtt';
   try {
     store.capturing = true;
     const response = await fetch(host + 'api/sources/' + store.source.id + '/capture', {
       method: 'POST',
       headers: { secret: localStorage.getItem('secret') }
     });
-    store.capturing = false;
 
-    if (response.status === 200) {
-      console.log('Capture triggered successfully');
-    } else {
-      console.log('Error triggering capture');
+    if (!response.ok) {
+      store.capturing = false;
       message.error('Error triggering capture: ' + (await response.json()).detail, {
         closable: true,
         duration: 60000
       });
+      return;
     }
 
-    // refresh meter data to get the new picture
-    await refreshMeter();
+    if (isMqtt) {
+      // Keep capturing = true; the WebSocket event will clear it when the image arrives.
+    } else {
+      store.capturing = false;
+      await refreshMeter();
+    }
   } catch (err) {
+    store.capturing = false;
     message.error('Error triggering capture: ' + err.message);
-    console.log('Error triggering capture:', err);
-    // get data from response and show error message
   }
 };
 

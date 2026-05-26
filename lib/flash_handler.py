@@ -108,8 +108,9 @@ def generate_nvs_binary(config: dict) -> bytes:
         ("mqtt_pass",  "string", config.get("mqtt_pass",  "")),
         ("mqtt_topic", "string", config.get("mqtt_topic", "MeterMonitor/meter")),
         ("meter_name", "string", config.get("meter_name", "meter")),
-        ("interval",   "u32",    str(int(config.get("interval", 30)))),
-        ("flash_en",   "u8",     "1" if config.get("flash_en", True) else "0"),
+        ("interval",       "u32", str(int(config.get("interval", 30)))),
+        ("flash_en",       "u8",  "1" if config.get("flash_en", True) else "0"),
+        ("flash_delay_ms", "u32", str(int(config.get("flash_delay_ms", 100)))),
     ]
     for key, encoding, value in fields:
         safe = str(value).replace('"', '""')
