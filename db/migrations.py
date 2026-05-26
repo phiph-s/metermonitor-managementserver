@@ -549,6 +549,13 @@ def run_migrations(db_file, initial_config=None):
             ))
             log("[MIGRATION] Created global_settings table and seeded from config")
 
+        # add capabilities column to watermeters table
+        cursor.execute("PRAGMA table_info(watermeters)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'capabilities' not in columns:
+            cursor.execute("ALTER TABLE watermeters ADD COLUMN capabilities TEXT DEFAULT NULL")
+            log("[MIGRATION] Added 'capabilities' column to 'watermeters' table")
+
         # add post-processing fields to settings table
         cursor.execute("PRAGMA table_info(settings)")
         columns = [info[1] for info in cursor.fetchall()]

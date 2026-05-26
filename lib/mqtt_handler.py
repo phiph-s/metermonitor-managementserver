@@ -111,7 +111,7 @@ class MQTTHandler:
     # Validate the incoming message
     def _on_message(self, client, userdata, msg):
         data = json.loads(msg.payload)
-        self._process_message(data)
+        self._process_message(data, msg.topic)
 
     def _validate_message(self, data: Dict[str, Any]) -> bool:
         # Required top-level fields
@@ -198,7 +198,7 @@ class MQTTHandler:
         return fmt, width, height
 
     # Process the incoming message
-    def _process_message(self, data: Dict[str, Any]):
+    def _process_message(self, data: Dict[str, Any], mqtt_topic: str = None):
         try:
             if not self._validate_message(data):
                 log(f"[MQTT] Invalid message format received at {datetime.datetime.now().isoformat()}: {data}")
@@ -225,10 +225,13 @@ class MQTTHandler:
                 row = cursor.fetchone()
                 meter_exists = row is not None
 
+                capabilities_raw = data.get('capabilities')
+                capabilities_json = json.dumps(capabilities_raw) if capabilities_raw is not None else None
+
                 if not meter_exists:
                     cursor.execute('''
-                        INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, picture_timestamp, picture_width, picture_height, picture_length, picture_data, picture_thumbnail, setup, picture_data_bbox)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)
+                        INSERT INTO watermeters (name, picture_number, wifi_rssi, picture_format, picture_timestamp, picture_width, picture_height, picture_length, picture_data, picture_thumbnail, setup, picture_data_bbox, capabilities)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,?)
                     ''', (
                         data['name'],
                         1,
@@ -240,7 +243,8 @@ class MQTTHandler:
                         picture_length,
                         picture_data_b64,
                         picture_thumbnail,
-                        0
+                        0,
+                        capabilities_json,
                     ))
                     cursor.execute('''
                                     INSERT OR IGNORE INTO settings
@@ -300,16 +304,35 @@ class MQTTHandler:
                         data['name']
                     ))
 
-                # Ensure MQTT source entry exists for this meter (unambiguous source tracking)
+                # Update capabilities if the device reported them
+                if capabilities_json is not None:
+                    cursor.execute(
+                        "UPDATE watermeters SET capabilities = ? WHERE name = ?",
+                        (capabilities_json, data['name']),
+                    )
+
+                # Ensure MQTT source entry exists and keep mqtt_topic up to date
                 cursor.execute(
-                    "SELECT 1 FROM sources WHERE name = ? AND source_type = 'mqtt'",
+                    "SELECT config_json FROM sources WHERE name = ? AND source_type = 'mqtt'",
                     (data['name'],),
                 )
-                if cursor.fetchone() is None:
+                src_row = cursor.fetchone()
+                if src_row is None:
+                    src_cfg = json.dumps({"mqtt_topic": mqtt_topic}) if mqtt_topic else None
                     cursor.execute(
                         "INSERT INTO sources (name, source_type, enabled, poll_interval_s, config_json, updated_ts) "
-                        "VALUES (?, 'mqtt', 1, NULL, NULL, datetime('now'))",
-                        (data['name'],),
+                        "VALUES (?, 'mqtt', 1, NULL, ?, datetime('now'))",
+                        (data['name'], src_cfg),
+                    )
+                elif mqtt_topic:
+                    try:
+                        src_cfg = json.loads(src_row[0]) if src_row[0] else {}
+                    except Exception:
+                        src_cfg = {}
+                    src_cfg["mqtt_topic"] = mqtt_topic
+                    cursor.execute(
+                        "UPDATE sources SET config_json = ? WHERE name = ? AND source_type = 'mqtt'",
+                        (json.dumps(src_cfg), data['name']),
                     )
                 conn.commit()
                 

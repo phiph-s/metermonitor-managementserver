@@ -589,10 +589,37 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
         if row is None:
             raise HTTPException(status_code=404, detail="Source not found")
 
+        if row['source_type'] == 'mqtt':
+            cur.execute("SELECT capabilities FROM watermeters WHERE name = ?", (row['name'],))
+            wm = cur.fetchone()
+            caps = []
+            if wm and wm[0]:
+                try:
+                    caps = json.loads(wm[0])
+                except Exception:
+                    pass
+            if 'capture' not in caps:
+                raise HTTPException(status_code=400, detail="Device does not support the capture command")
+            cfg = {}
+            if row['config_json']:
+                try:
+                    cfg = json.loads(row['config_json'])
+                except Exception:
+                    pass
+            mqtt_topic = cfg.get('mqtt_topic')
+            if not mqtt_topic:
+                raise HTTPException(status_code=400, detail="MQTT topic not yet known — wait for the next message from the device")
+            if not get_mqtt_client_fn:
+                raise HTTPException(status_code=501, detail="MQTT client not available")
+            mqtt_client = get_mqtt_client_fn()
+            if not mqtt_client:
+                raise HTTPException(status_code=503, detail="MQTT client not connected")
+            mqtt_client.publish(f"{mqtt_topic}/cmd/capture", "1")
+            return {"message": "Capture command sent"}
+
         try:
             capture_and_process_source(config, config['dbfile'], row, meter_preditor)
         except Exception as e:
-            # print stack trace for debug logging
             import traceback
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Capture processing failed: {e}")
@@ -1266,6 +1293,11 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
         if isinstance(picture_bbox, (bytes, bytearray)):
             picture_bbox = base64.b64encode(picture_bbox).decode('utf-8')
 
+        try:
+            capabilities = json.loads(row[14]) if row[14] else []
+        except Exception:
+            capabilities = []
+
         return {
             "name": row[0],
             "picture_number": row[1],
@@ -1279,7 +1311,8 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
                 "data": picture_data,
                 "data_bbox": picture_bbox
             },
-            "dataset_present": dataset_present
+            "dataset_present": dataset_present,
+            "capabilities": capabilities,
         }
 
     @app.delete("/api/watermeters/{name}", dependencies=[Depends(authenticate)])

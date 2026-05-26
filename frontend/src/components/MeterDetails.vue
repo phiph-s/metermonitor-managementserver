@@ -301,7 +301,8 @@ const props = defineProps({
   id: String,
   downloadingDataset: Boolean,
   history: Object,
-  dailyHistory: Object
+  dailyHistory: Object,
+  capabilities: { type: Array, default: () => [] },
 });
 
 const store = useWatermeterStore();
@@ -343,7 +344,9 @@ const refreshSource = async () => {
 
 const menuOptions = computed(() => {
   const options = [];
-  if (store.source?.source_type !== 'mqtt') {
+  const isMqtt = store.source?.source_type === 'mqtt';
+  const hasCapture = !isMqtt || (props.capabilities || []).includes('capture');
+  if (hasCapture) {
     options.push({
       label: store.capturing ? 'Capturing...' : 'Capture',
       key: 'capture',
