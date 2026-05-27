@@ -15,6 +15,10 @@
         <n-card size="small">
           <template #header>Firmware Release</template>
           <n-space vertical size="medium">
+            <n-alert v-if="!webSerialSupported" type="warning" title="WebSerial not supported in this browser">
+              Flashing via the browser requires <strong>Chrome</strong> or <strong>Edge</strong> (v89+).
+              You can still configure and download the firmware bundle to flash manually.
+            </n-alert>
             <n-alert v-if="releasesError" type="error" :title="releasesError" />
             <n-spin v-if="loadingReleases" />
             <template v-else-if="releases.length === 0 && !releasesError">
@@ -202,10 +206,7 @@
         <n-card size="small">
           <template #header>Flash via WebSerial</template>
           <n-space vertical size="medium">
-            <n-alert v-if="!webSerialSupported" type="warning" title="WebSerial not supported">
-              Please use <strong>Chrome</strong> or <strong>Edge</strong> (v89+).
-            </n-alert>
-            <template v-else>
+            <template v-if="webSerialSupported">
               <n-alert v-if="resetMode === 'auto'" type="info" title="Auto reset">
                 The device will be reset into bootloader mode automatically via DTR/RTS.
                 If connection fails, switch to <strong>Manual</strong> mode.
@@ -222,14 +223,18 @@
               <n-button type="primary" :disabled="!webSerialSupported" @click="doFlash">
                 Connect &amp; Flash
               </n-button>
-              <n-select v-model:value="baudRate" :options="BAUD_RATES" size="small" style="width:130px;" />
+              <n-button :loading="bundleDownloading" @click="doDownloadBundle">
+                Download .zip
+              </n-button>
+              <n-select v-model:value="baudRate" :options="BAUD_RATES" size="small" style="width:130px;" :disabled="!webSerialSupported" />
               <n-text depth="3" style="font-size:11px;">baud rate</n-text>
-              <n-radio-group v-model:value="resetMode" size="small">
+              <n-radio-group v-model:value="resetMode" size="small" :disabled="!webSerialSupported">
                 <n-radio-button value="auto">Auto reset</n-radio-button>
                 <n-radio-button value="manual">Manual</n-radio-button>
               </n-radio-group>
               <n-button @click="step = 3">← Back</n-button>
             </n-flex>
+            <n-alert v-if="bundleError" type="error" :title="bundleError" />
             <div v-if="flashProgress !== null" class="flash-progress">
               <n-progress type="line" :percentage="flashProgress" :height="10" :border-radius="5" :processing="flashing" />
               <span class="flash-progress-label">{{ flashProgressLabel }}</span>
@@ -281,7 +286,6 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiService } from '@/services/api.js';
 
 const NVS_OFFSET  = 0x9000;
-const SAVED_KEY   = 'mm_nvs_flash_config';
 const host        = import.meta.env.VITE_HOST || '';
 const authStore   = useAuthStore();
 
@@ -332,23 +336,31 @@ const DEFAULT_CFG = () => ({
   flash_delay_ms: 100,
 });
 
-const cfg         = ref(DEFAULT_CFG());
-const saveNotice  = ref('');
-const hasSavedConfig = ref(!!localStorage.getItem(SAVED_KEY));
+const cfg            = ref(DEFAULT_CFG());
+const saveNotice     = ref('');
+const hasSavedConfig = ref(false);
 
-function saveConfig() {
-  localStorage.setItem(SAVED_KEY, JSON.stringify(cfg.value));
-  hasSavedConfig.value = true;
-  saveNotice.value = 'Saved!';
-  setTimeout(() => { saveNotice.value = ''; }, 1800);
+async function saveConfig() {
+  try {
+    await apiService.postJson('api/flash/config', cfg.value);
+    hasSavedConfig.value = true;
+    saveNotice.value = 'Saved!';
+    setTimeout(() => { saveNotice.value = ''; }, 1800);
+  } catch (e) {
+    saveNotice.value = 'Save failed';
+    setTimeout(() => { saveNotice.value = ''; }, 2500);
+  }
 }
 
-function loadSavedConfig() {
+async function loadSavedConfig() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '{}');
-    cfg.value = { ...DEFAULT_CFG(), ...saved };
-    saveNotice.value = 'Loaded!';
-    setTimeout(() => { saveNotice.value = ''; }, 1800);
+    const saved = await apiService.getJson('api/flash/config');
+    if (saved && Object.keys(saved).length > 0) {
+      cfg.value = { ...DEFAULT_CFG(), ...saved };
+      hasSavedConfig.value = true;
+      saveNotice.value = 'Loaded!';
+      setTimeout(() => { saveNotice.value = ''; }, 1800);
+    }
   } catch { /* ignore */ }
 }
 
@@ -370,6 +382,39 @@ async function doDownload() {
     downloadError.value = e.message;
   } finally {
     downloading.value = false;
+  }
+}
+
+// ── bundle download ────────────────────────────────────────────────────────────
+const bundleDownloading = ref(false);
+const bundleError       = ref('');
+
+async function doDownloadBundle() {
+  bundleDownloading.value = true;
+  bundleError.value = '';
+  try {
+    const resp = await fetch(`${host}api/flash/download-bundle`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', secret: authStore.secret },
+      body:    JSON.stringify({ tag: selectedTag.value, board: selectedBoard.value, nvs_config: cfg.value }),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.json().catch(() => ({}))).detail || resp.statusText;
+      throw new Error(detail);
+    }
+    const blob = await resp.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `metermonitor-${selectedBoard.value}-${selectedTag.value}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (e) {
+    bundleError.value = e.message || String(e);
+  } finally {
+    bundleDownloading.value = false;
   }
 }
 
@@ -548,7 +593,7 @@ async function stopMonitor() {
 // ── init ───────────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadReleases();
-  if (localStorage.getItem(SAVED_KEY)) loadSavedConfig();
+  loadSavedConfig();
 });
 </script>
 

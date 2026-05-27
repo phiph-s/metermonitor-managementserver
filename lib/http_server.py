@@ -54,7 +54,7 @@ from lib.realtime_events import evaluation_event_hub
 # http server class
 # FastAPOI automatically creates a documentation for the API on the path /docs
 
-def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn=None):
+def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn=None, get_mqtt_handler_fn=None):
     app = FastAPI(lifespan=lifespan)
     SECRET_KEY = config['secret_key']
     db_connection = lambda: sqlite3.connect(config['dbfile'])
@@ -579,7 +579,7 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
         }
 
     @app.post("/api/sources/{source_id}/capture", dependencies=[Depends(authenticate)])
-    def trigger_source_capture(source_id: int):
+    async def trigger_source_capture(source_id: int):
         log(f"[HTTP] Manual capture trigger for source ID {source_id}")
         db = db_connection()
         db.row_factory = sqlite3.Row
@@ -614,11 +614,26 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
             mqtt_client = get_mqtt_client_fn()
             if not mqtt_client:
                 raise HTTPException(status_code=503, detail="MQTT client not connected")
-            mqtt_client.publish(f"{mqtt_topic}/cmd/capture", "1")
-            return {"message": "Capture command sent"}
 
+            meter_name = row['name']
+            handler = get_mqtt_handler_fn() if get_mqtt_handler_fn else None
+            evt = handler.register_capture_waiter(meter_name) if handler else None
+            try:
+                mqtt_client.publish(f"{mqtt_topic}/cmd/capture", "1")
+                if evt:
+                    loop = asyncio.get_event_loop()
+                    arrived = await loop.run_in_executor(None, lambda: evt.wait(5.0))
+                    if not arrived:
+                        raise HTTPException(status_code=408, detail="Capture timed out — no image received within 5 seconds")
+            finally:
+                if handler and evt:
+                    handler.unregister_capture_waiter(meter_name, evt)
+
+            return {"message": "Capture completed"}
+
+        loop = asyncio.get_event_loop()
         try:
-            capture_and_process_source(config, config['dbfile'], row, meter_preditor)
+            await loop.run_in_executor(None, capture_and_process_source, config, config['dbfile'], row, meter_preditor)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -2001,6 +2016,70 @@ def prepare_setup_app(config, lifespan, restart_mqtt_fn=None, get_mqtt_client_fn
             target,
             media_type="application/octet-stream",
             headers={"Cache-Control": "no-store"},
+        )
+
+    # Flash config persistence in /data/flash_config.json
+    FLASH_CONFIG_PATH = "/data/flash_config.json"
+
+    @app.get("/api/flash/config", dependencies=[Depends(authenticate)])
+    def flash_config_get():
+        if not os.path.isfile(FLASH_CONFIG_PATH):
+            return {}
+        try:
+            with open(FLASH_CONFIG_PATH) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    @app.post("/api/flash/config", dependencies=[Depends(authenticate)])
+    async def flash_config_save(request: Request):
+        body = await request.json()
+        os.makedirs(os.path.dirname(FLASH_CONFIG_PATH), exist_ok=True)
+        with open(FLASH_CONFIG_PATH, "w") as f:
+            json.dump(body, f)
+        return {"ok": True}
+
+    class FlashBundleRequest(BaseModel):
+        tag: str
+        board: str
+        nvs_config: dict
+
+    @app.post("/api/flash/download-bundle", dependencies=[Depends(authenticate)])
+    async def flash_download_bundle(req: FlashBundleRequest):
+        import zipfile as _zipfile
+        try:
+            loop = asyncio.get_event_loop()
+            flash_args = await loop.run_in_executor(None, get_flash_args, req.tag, req.board)
+            nvs_binary = await loop.run_in_executor(None, generate_nvs_binary, req.nvs_config)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+        buf = BytesIO()
+        with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
+            for bin_info in flash_args["binaries"]:
+                src = os.path.join(FIRMWARE_CACHE_DIR, bin_info["path"])
+                if os.path.isfile(src):
+                    zf.write(src, bin_info["filename"])
+            zf.writestr("nvs.bin", nvs_binary)
+            manifest = {
+                "flash_mode":  flash_args.get("flash_mode", "dio"),
+                "flash_freq":  flash_args.get("flash_freq", "40m"),
+                "flash_size":  flash_args.get("flash_size", "detect"),
+                "nvs_offset":  NVS_PARTITION_OFFSET,
+                "files": [
+                    {"filename": b["filename"], "offset": b["offset"]}
+                    for b in flash_args["binaries"]
+                ] + [{"filename": "nvs.bin", "offset": NVS_PARTITION_OFFSET}],
+            }
+            zf.writestr("flash_manifest.json", json.dumps(manifest, indent=2))
+        buf.seek(0)
+        filename = f"metermonitor-{req.board}-{req.tag}.zip"
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @app.get("/")

@@ -31,6 +31,9 @@ class MQTTHandler:
         # Used to signal _reconnect() loop when _on_connect fires
         self._connect_result = threading.Event()
         self._connect_success = False
+        # Capture waiters: meter_name -> list of threading.Event
+        self._capture_waiters: Dict[str, list] = {}
+        self._capture_waiters_lock = threading.Lock()
         # Use singleton instance (shared with HTTP server)
         self.meter_preditor = get_meter_predictor()
         log("[MQTT] Using shared meter predictor singleton instance.")
@@ -352,7 +355,7 @@ class MQTTHandler:
                 # Insert boundingboxed image into database
                 if boundingboxed_image:
                     cursor.execute('''
-                        UPDATE watermeters 
+                        UPDATE watermeters
                         SET picture_data_bbox = ?
                         WHERE name = ?
                     ''', (
@@ -361,6 +364,8 @@ class MQTTHandler:
                     ))
                     conn.commit()
                     log(f"[MQTT] Saved boundingboxed image of {data['name']} to database.")
+
+                self._notify_capture_waiters(data['name'])
 
         except Exception as e:
             log(f"[MQTT] Error processing message: {e}")
@@ -396,6 +401,27 @@ class MQTTHandler:
             self.client.loop_forever()
         else:
             self.client.loop_start()
+
+    # ── capture waiters ───────────────────────────────────────────────────────────
+
+    def register_capture_waiter(self, name: str) -> threading.Event:
+        evt = threading.Event()
+        with self._capture_waiters_lock:
+            self._capture_waiters.setdefault(name, []).append(evt)
+        return evt
+
+    def unregister_capture_waiter(self, name: str, evt: threading.Event) -> None:
+        with self._capture_waiters_lock:
+            waiters = self._capture_waiters.get(name, [])
+            try:
+                waiters.remove(evt)
+            except ValueError:
+                pass
+
+    def _notify_capture_waiters(self, name: str) -> None:
+        with self._capture_waiters_lock:
+            for evt in self._capture_waiters.get(name, []):
+                evt.set()
 
     def stop(self):
         self.should_reconnect = False
